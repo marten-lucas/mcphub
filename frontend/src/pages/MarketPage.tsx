@@ -597,6 +597,30 @@ const MarketPage: React.FC = () => {
     return ordered;
   })();
 
+  const normalizeRepoUrl = (repositoryUrl: string): string => {
+    return repositoryUrl
+      .trim()
+      .replace(/^git@/, '')
+      .replace(/^ssh:\/\//, 'https://')
+      .replace(/\.git$/i, '')
+      .replace(/\/+$/, '');
+  };
+
+  const localBuildTemplateServers =
+    currentTab === 'local' && selectedServer?.repository?.url
+      ? sourceInstallJobs
+          .filter(
+            (job: any) =>
+              job?.repositoryUrl &&
+              normalizeRepoUrl(job.repositoryUrl) === normalizeRepoUrl(selectedServer.repository.url) &&
+              job.status === 'succeeded',
+          )
+          .map((job: any) => ({
+            name: job.serverName,
+            version: job.version,
+          }))
+      : [];
+
   if (selectedServer) {
     return (
       <MarketServerDetail
@@ -605,6 +629,7 @@ const MarketPage: React.FC = () => {
         onInstall={handleLocalInstall}
         installing={installing}
         isInstalled={isServerInstalled(selectedServer.name)}
+        buildTemplateServers={localBuildTemplateServers}
         onDelete={(serverName) => {
           setSelectedServer(null);
           setSearchParams((prev) => {

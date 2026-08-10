@@ -122,7 +122,7 @@ const CloudServerCard: React.FC<CloudServerCardProps> = ({ server, onClick, onIn
                 e.stopPropagation();
                 onInstallFromSource(server);
               }}
-              title="Install from source"
+              title="Add server"
             >
               <Download size={13} />
             </button>

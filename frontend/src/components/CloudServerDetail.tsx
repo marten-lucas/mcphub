@@ -53,19 +53,19 @@ const CloudServerDetail: React.FC<CloudServerDetailProps> = ({
       return {
         className: "hub-btn cursor-default",
         disabled: true,
-        text: t('market.installed')
+        text: t('server.added', { defaultValue: 'Added' })
       };
     } else if (installing) {
       return {
         className: "hub-btn cursor-not-allowed opacity-50",
         disabled: true,
-        text: t('market.installing')
+        text: t('server.adding', { defaultValue: 'Adding...' })
       };
     } else {
       return {
         className: "hub-btn primary",
         disabled: false,
-        text: t('market.install')
+        text: t('server.addServer')
       };
     }
   };
@@ -548,7 +548,7 @@ const CloudServerDetail: React.FC<CloudServerDetailProps> = ({
           <ServerForm
             onSubmit={handleInstallSubmit}
             onCancel={handleModalClose}
-            modalTitle={t('cloud.installServer', { name: server.title || server.name })}
+            modalTitle={`${t('server.addServer')}: ${server.title || server.name}`}
             formError={installError}
             initialData={{
               name: server.name,

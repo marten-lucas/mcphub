@@ -156,7 +156,7 @@ const RegistryServerCard: React.FC<RegistryServerCardProps> = ({ serverEntry, on
                 e.stopPropagation();
                 onInstallFromSource(serverEntry);
               }}
-              title="Install from source"
+              title="Add server"
             >
               <Download size={13} />
             </button>

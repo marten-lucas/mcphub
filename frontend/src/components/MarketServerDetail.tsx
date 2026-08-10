@@ -18,6 +18,10 @@ interface MarketServerDetailProps {
   isInstalled?: boolean;
   onDelete?: (serverName: string) => void;
   onEdit?: (server: MarketServer) => void;
+  buildTemplateServers?: Array<{
+    name: string;
+    version?: string;
+  }>;
 }
 
 const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
@@ -28,6 +32,7 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
   isInstalled = false,
   onDelete,
   onEdit,
+  buildTemplateServers = [],
 }) => {
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -173,21 +178,21 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
       return {
         className: 'bg-green-600 cursor-default px-4 py-2 rounded text-sm font-medium text-white',
         disabled: true,
-        text: t('market.installed'),
+        text: t('server.added', { defaultValue: 'Added' }),
       };
     } else if (installing) {
       return {
         className:
           'bg-gray-400 cursor-not-allowed px-4 py-2 rounded text-sm font-medium text-white',
         disabled: true,
-        text: t('market.installing'),
+        text: t('server.adding', { defaultValue: 'Adding...' }),
       };
     } else {
       return {
         className:
           'hub-btn primary',
         disabled: false,
-        text: t('market.install'),
+        text: t('server.addServer'),
       };
     }
   };
@@ -418,6 +423,34 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
             </a>
           )}
         </div>
+
+        {isCustomServer && (
+          <div className="mb-6 rounded border border-gray-200 bg-gray-50 p-4">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <h3 className="text-lg font-semibold text-gray-900">Build template</h3>
+              <span className="text-sm text-gray-500">
+                {buildTemplateServers.length} server{buildTemplateServers.length === 1 ? '' : 's'}
+              </span>
+            </div>
+            {buildTemplateServers.length > 0 ? (
+              <ul className="space-y-2">
+                {buildTemplateServers.map((entry) => (
+                  <li
+                    key={entry.name}
+                    className="flex items-center justify-between gap-3 rounded border border-gray-200 bg-white px-3 py-2 text-sm"
+                  >
+                    <span className="font-medium text-gray-900">{entry.name}</span>
+                    {entry.version ? (
+                      <span className="text-xs text-gray-500">v{entry.version}</span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-gray-600">No servers are using this build template yet.</p>
+            )}
+          </div>
+        )}
         {readmeLoading ? (
           <div className="rounded border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
             Loading README from GitHub...
@@ -505,7 +538,7 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
           <ServerForm
             onSubmit={handleSubmit}
             onCancel={toggleModal}
-            modalTitle={t('market.installServer', { name: server.display_name })}
+            modalTitle={`${t('server.addServer')}: ${server.display_name}`}
             formError={error}
             initialData={{
               name: server.name,
@@ -554,7 +587,7 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
                 </div>
               </div>
             </div>
-            <p className="text-gray-600 text-sm mb-6">{t('market.confirmVariablesMessage')}</p>
+            <p className="text-gray-600 text-sm mb-6">{t('server.confirmVariablesMessage')}</p>
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => {
@@ -569,7 +602,7 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
                 onClick={handleConfirmInstall}
                 className="hub-btn primary"
               >
-                {t('market.confirmAndInstall')}
+                {t('server.confirmAndAdd', { defaultValue: 'Confirm and Add' })}
               </button>
             </div>
           </div>

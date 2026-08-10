@@ -208,10 +208,10 @@ const RegistryServerDetail: React.FC<RegistryServerDetailProps> = ({
             }`}
           >
             {isInstalled
-              ? t('registry.installed')
+              ? t('server.added', { defaultValue: 'Added' })
               : installing
-                ? t('registry.installing')
-                : t('registry.install')}
+                ? t('server.adding', { defaultValue: 'Adding...' })
+                : t('server.addServer')}
           </button>
         </div>
 
@@ -356,10 +356,10 @@ const RegistryServerDetail: React.FC<RegistryServerDetailProps> = ({
             }`}
           >
             {isInstalled
-              ? t('registry.installed')
+              ? t('server.added', { defaultValue: 'Added' })
               : installing
-                ? t('registry.installing')
-                : t('registry.install')}
+                ? t('server.adding', { defaultValue: 'Adding...' })
+                : t('server.addServer')}
           </button>
         </div>
 
@@ -625,7 +625,7 @@ const RegistryServerDetail: React.FC<RegistryServerDetailProps> = ({
           <ServerForm
             onSubmit={handleInstallSubmit}
             onCancel={handleModalClose}
-            modalTitle={t('registry.installServer', { name: server.title || server.name })}
+            modalTitle={`${t('server.addServer')}: ${server.title || server.name}`}
             formError={installError}
             initialData={getInitialFormData()}
           />
