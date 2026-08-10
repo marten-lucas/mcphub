@@ -337,6 +337,10 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
   })();
   const authorName = githubMeta?.owner || server.author?.name || t('market.unknown');
   const repositoryName = githubMeta?.repo || server.name;
+  const readmeForRender =
+    readmeContent?.trim().startsWith('```') && readmeContent.trim().endsWith('```')
+      ? readmeContent.trim().replace(/^```[a-zA-Z0-9_-]*\n?/, '').replace(/\n?```$/, '')
+      : readmeContent;
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
@@ -418,11 +422,47 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
           <div className="rounded border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
             Loading README from GitHub...
           </div>
-        ) : readmeContent ? (
-          <div className="max-h-[60vh] overflow-auto rounded border border-gray-200 bg-gray-50 p-4 text-sm leading-7 text-gray-700">
-            <div className="prose prose-slate max-w-none" style={{ overflowWrap: 'anywhere' }}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{readmeContent}</ReactMarkdown>
-            </div>
+        ) : readmeForRender ? (
+          <div className="max-h-[60vh] overflow-auto rounded border border-gray-200 bg-white p-6">
+            <article className="max-w-none text-gray-800 leading-7" style={{ overflowWrap: 'anywhere' }}>
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  h1: ({ children }) => <h1 className="text-4xl font-semibold mb-5 pb-2 border-b border-gray-200">{children}</h1>,
+                  h2: ({ children }) => <h2 className="text-3xl font-semibold mt-8 mb-4 pb-2 border-b border-gray-200">{children}</h2>,
+                  h3: ({ children }) => <h3 className="text-2xl font-semibold mt-7 mb-3">{children}</h3>,
+                  p: ({ children }) => <p className="mb-4">{children}</p>,
+                  ul: ({ children }) => <ul className="list-disc pl-6 mb-4 space-y-1">{children}</ul>,
+                  ol: ({ children }) => <ol className="list-decimal pl-6 mb-4 space-y-1">{children}</ol>,
+                  li: ({ children }) => <li>{children}</li>,
+                  a: ({ href, children }) => (
+                    <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                      {children}
+                    </a>
+                  ),
+                  code: ({ className, children, ...props }) => {
+                    const isInline = !className;
+                    if (isInline) {
+                      return (
+                        <code className="px-1 py-0.5 rounded bg-gray-100 text-[0.9em]" {...props}>
+                          {children}
+                        </code>
+                      );
+                    }
+                    return (
+                      <code className={`${className} text-sm`} {...props}>
+                        {children}
+                      </code>
+                    );
+                  },
+                  pre: ({ children }) => (
+                    <pre className="mb-4 rounded-md border border-gray-200 bg-gray-50 p-4 overflow-x-auto">{children}</pre>
+                  ),
+                }}
+              >
+                {readmeForRender}
+              </ReactMarkdown>
+            </article>
           </div>
         ) : (
           <div className="rounded border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
