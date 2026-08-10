@@ -57,6 +57,9 @@ import {
   searchMarketServersByQuery,
   getMarketServersByCategory,
   getMarketServersByTag,
+  registerCustomMarketServer,
+  updateCustomMarketServer,
+  deleteCustomMarketServer,
 } from '../controllers/marketController.js';
 import {
   createSourceInstallHandler,
@@ -378,6 +381,9 @@ export const initRoutes = async (app: express.Application): Promise<void> => {
   authenticatedRouter.get('/market/categories/:category', getMarketServersByCategory);
   authenticatedRouter.get('/market/tags', getAllMarketTags);
   authenticatedRouter.get('/market/tags/:tag', getMarketServersByTag);
+  authenticatedRouter.post('/market/custom-servers', registerCustomMarketServer);
+  authenticatedRouter.put('/market/custom-servers/:serverName', updateCustomMarketServer);
+  authenticatedRouter.delete('/market/custom-servers/:serverName', deleteCustomMarketServer);
   authenticatedRouter.post('/market/source-install/preview', previewSourceInstallHandler);
   authenticatedRouter.post('/market/source-install', createSourceInstallHandler);
   authenticatedRouter.get('/market/source-install/jobs', listSourceInstallJobsHandler);

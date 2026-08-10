@@ -8,6 +8,9 @@ import {
   searchMarketServers,
   filterMarketServersByCategory,
   filterMarketServersByTag,
+  registerCustomServer,
+  updateCustomServer,
+  deleteCustomServer,
 } from '../services/marketService.js';
 
 // Get all market servers
@@ -152,3 +155,138 @@ export const getMarketServersByTag = (req: Request, res: Response): void => {
     });
   }
 };
+
+// Register a custom MCP server from a Git repository
+export const registerCustomMarketServer = (req: Request, res: Response): void => {
+  try {
+    const { serverName, repositoryUrl, tags } = req.body;
+
+    if (!serverName || !repositoryUrl) {
+      res.status(400).json({
+        success: false,
+        message: 'serverName and repositoryUrl are required',
+      });
+      return;
+    }
+
+    // Validate URL format
+    try {
+      new URL(repositoryUrl);
+    } catch {
+      res.status(400).json({
+        success: false,
+        message: 'Invalid repository URL format',
+      });
+      return;
+    }
+
+    const parsedTags = Array.isArray(tags)
+      ? tags.filter((tag: unknown): tag is string => typeof tag === 'string' && tag.trim().length > 0)
+      : [];
+
+    const newServer = registerCustomServer(serverName, repositoryUrl, parsedTags);
+    const response: ApiResponse = {
+      success: true,
+      data: newServer,
+      message: 'Custom server registered successfully',
+    };
+    res.status(201).json(response);
+  } catch (error) {
+    console.error('Failed to register custom server:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to register custom server',
+    });
+  }
+};
+
+// Update a custom MCP server
+export const updateCustomMarketServer = (req: Request, res: Response): void => {
+  try {
+    const { serverName } = req.params;
+    const { repositoryUrl, displayName, newServerName, tags } = req.body;
+
+    if (!serverName) {
+      res.status(400).json({
+        success: false,
+        message: 'serverName is required',
+      });
+      return;
+    }
+
+    if (!repositoryUrl && !displayName && !newServerName && !tags) {
+      res.status(400).json({
+        success: false,
+        message: 'At least one of repositoryUrl, displayName, newServerName, or tags must be provided',
+      });
+      return;
+    }
+
+    // Validate URL format if provided
+    if (repositoryUrl) {
+      try {
+        new URL(repositoryUrl);
+      } catch {
+        res.status(400).json({
+          success: false,
+          message: 'Invalid repository URL format',
+        });
+        return;
+      }
+    }
+
+    const parsedTags = Array.isArray(tags)
+      ? tags.filter((tag: unknown): tag is string => typeof tag === 'string' && tag.trim().length > 0)
+      : undefined;
+
+    const updatedServer = updateCustomServer(serverName, {
+      repositoryUrl,
+      displayName,
+      newServerName,
+      tags: parsedTags,
+    });
+    const response: ApiResponse = {
+      success: true,
+      data: updatedServer,
+      message: 'Custom server updated successfully',
+    };
+    res.json(response);
+  } catch (error) {
+    console.error('Failed to update custom server:', error);
+    const message = error instanceof Error ? error.message : 'Failed to update custom server';
+    res.status(error instanceof Error && message.includes('not found') ? 404 : 500).json({
+      success: false,
+      message,
+    });
+  }
+};
+
+// Delete a custom MCP server
+export const deleteCustomMarketServer = (req: Request, res: Response): void => {
+  try {
+    const { serverName } = req.params;
+
+    if (!serverName) {
+      res.status(400).json({
+        success: false,
+        message: 'serverName is required',
+      });
+      return;
+    }
+
+    deleteCustomServer(serverName);
+    const response: ApiResponse = {
+      success: true,
+      message: 'Custom server deleted successfully',
+    };
+    res.json(response);
+  } catch (error) {
+    console.error('Failed to delete custom server:', error);
+    const message = error instanceof Error ? error.message : 'Failed to delete custom server';
+    res.status(error instanceof Error && message.includes('not found') ? 404 : 500).json({
+      success: false,
+      message,
+    });
+  }
+};
+

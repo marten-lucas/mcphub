@@ -21,6 +21,7 @@ import CloudServerDetail from '@/components/CloudServerDetail';
 import RegistryServerCard from '@/components/RegistryServerCard';
 import RegistryServerDetail from '@/components/RegistryServerDetail';
 import MCPRouterApiKeyError from '@/components/MCPRouterApiKeyError';
+import AddCustomRepoModal from '@/components/AddCustomRepoModal';
 import Pagination from '@/components/ui/Pagination';
 import CursorPagination from '@/components/ui/CursorPagination';
 
@@ -114,6 +115,8 @@ const MarketPage: React.FC = () => {
   const [sourceInstallConfirmPlan, setSourceInstallConfirmPlan] = useState<any>(null);
   const [installedCloudServers, setInstalledCloudServers] = useState<Set<string>>(new Set());
   const [installedRegistryServers, setInstalledRegistryServers] = useState<Set<string>>(new Set());
+  const [addCustomRepoModalOpen, setAddCustomRepoModalOpen] = useState(false);
+  const [editingCustomServer, setEditingCustomServer] = useState<MarketServer | null>(null);
 
   useEffect(() => {
     const loadServerDetails = async () => {
@@ -190,6 +193,49 @@ const MarketPage: React.FC = () => {
   };
 
   const handleBackToList = () => navigate(`/market?tab=${currentTab}`);
+
+  const handleOpenAddCustomRepoModal = () => {
+    setEditingCustomServer(null);
+    setAddCustomRepoModalOpen(true);
+  };
+
+  const handleOpenEditCustomRepoModal = (server: MarketServer) => {
+    setEditingCustomServer(server);
+    setAddCustomRepoModalOpen(true);
+  };
+
+  const handleCloseCustomRepoModal = () => {
+    setAddCustomRepoModalOpen(false);
+    setEditingCustomServer(null);
+  };
+
+  const handleAddCustomRepoSuccess = async (serverName: string, mode: 'add' | 'edit') => {
+    setAddCustomRepoModalOpen(false);
+    setEditingCustomServer(null);
+
+    if (mode === 'edit' && selectedServer && selectedServer.name === serverName) {
+      const refreshedServer = await fetchLocalServerByName(serverName);
+      if (refreshedServer) {
+        setSelectedServer(refreshedServer);
+        return;
+      }
+    }
+
+    if (mode === 'add') {
+      filterLocalByCategory('Custom');
+      navigate(`/market/${serverName}?tab=local&category=Custom`);
+      return;
+    }
+
+    filterLocalByCategory('');
+    handleBackToList();
+  };
+
+  const handleCustomServerDelete = (serverName: string) => {
+    // Refresh the market data to remove the deleted server
+    filterLocalByCategory('');
+    handleBackToList();
+  };
 
   const handleLocalInstall = async (server: MarketServer, config: ServerConfig) => {
     try {
@@ -476,6 +522,8 @@ const MarketPage: React.FC = () => {
         onInstall={handleLocalInstall}
         installing={installing}
         isInstalled={isServerInstalled(selectedServer.name)}
+        onDelete={handleCustomServerDelete}
+        onEdit={handleOpenEditCustomRepoModal}
       />
     );
   }
@@ -826,6 +874,14 @@ const MarketPage: React.FC = () => {
         </div>
       )}
 
+      <AddCustomRepoModal
+        isOpen={addCustomRepoModalOpen}
+        onClose={handleCloseCustomRepoModal}
+        onSuccess={handleAddCustomRepoSuccess}
+        mode={editingCustomServer ? 'edit' : 'add'}
+        initialServer={editingCustomServer}
+      />
+
       {/* Search bar */}
       {(isLocalTab || isRegistryTab) && (
         <form onSubmit={handleSearch} className="hub-card flex items-center gap-2 px-3 mb-5" style={{ padding: 6 }}>
@@ -894,6 +950,20 @@ const MarketPage: React.FC = () => {
                   <span className="truncate">{cat}</span>
                 </button>
               ))}
+              <button
+                onClick={handleOpenAddCustomRepoModal}
+                className="w-full mt-3 transition-colors text-[13px] font-medium"
+                style={{
+                  padding: '8px 10px',
+                  borderRadius: 6,
+                  background: 'transparent',
+                  color: 'var(--hub-ink-2)',
+                  border: '1px dashed var(--hub-line)',
+                  textAlign: 'left',
+                }}
+              >
+                + {t('market.addCustomRepo')}
+              </button>
             </div>
           </div>
         )}

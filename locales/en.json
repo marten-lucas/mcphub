@@ -464,6 +464,7 @@
     "clearCategoryFilter": "",
     "clearTagFilter": "",
     "categories": "Categories",
+    "addCustomRepo": "add custom repo",
     "tags": "Tags",
     "showTags": "Show tags",
     "hideTags": "Hide tags",

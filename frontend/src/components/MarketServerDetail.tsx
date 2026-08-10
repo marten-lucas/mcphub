@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useToast } from '@/contexts/ToastContext';
 import { MarketServer, MarketServerInstallation } from '@/types';
 import ServerForm from './ServerForm';
 import { detectVariables } from '../utils/variableDetection';
+import { apiDelete } from '@/utils/fetchInterceptor';
 
 import { ServerConfig } from '@/types';
 
@@ -12,6 +14,8 @@ interface MarketServerDetailProps {
   onInstall: (server: MarketServer, config: ServerConfig) => void;
   installing?: boolean;
   isInstalled?: boolean;
+  onDelete?: (serverName: string) => void;
+  onEdit?: (server: MarketServer) => void;
 }
 
 const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
@@ -20,13 +24,20 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
   onInstall,
   installing = false,
   isInstalled = false,
+  onDelete,
+  onEdit,
 }) => {
   const { t } = useTranslation();
+  const { showToast } = useToast();
   const [modalVisible, setModalVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmationVisible, setConfirmationVisible] = useState(false);
   const [pendingPayload, setPendingPayload] = useState<any>(null);
   const [detectedVariables, setDetectedVariables] = useState<string[]>([]);
+  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const isCustomServer = server.categories?.includes('Custom') || server.tags?.includes('Custom');
 
   // Helper function to determine button state
   const getButtonProps = () => {
@@ -82,6 +93,28 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
   const handleInstall = () => {
     if (!isInstalled) {
       toggleModal();
+    }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!isCustomServer) return;
+    
+    setDeleting(true);
+    try {
+      const response = await apiDelete(`/market/custom-servers/${server.name}`);
+      if (response.success) {
+        showToast(`Custom server "${server.display_name}" deleted successfully`, 'success');
+        onDelete?.(server.name);
+        onBack();
+      } else {
+        setError(response.message || 'Failed to delete custom server');
+      }
+    } catch (err) {
+      console.error('Error deleting custom server:', err);
+      setError('Failed to delete custom server');
+    } finally {
+      setDeleting(false);
+      setDeleteConfirmVisible(false);
     }
   };
 
@@ -308,7 +341,26 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
         </div>
       )}
 
-      <div className="mt-6 flex justify-end">
+      <div className="mt-6 flex justify-between items-center gap-3">
+        <div className="flex gap-2">
+          {isCustomServer && onEdit && (
+            <button
+              onClick={() => onEdit(server)}
+              className="px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded border border-blue-200"
+            >
+              Edit Custom Repo
+            </button>
+          )}
+          {isCustomServer && (
+            <button
+              onClick={() => setDeleteConfirmVisible(true)}
+              disabled={deleting}
+              className="px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded border border-red-200 disabled:opacity-50"
+            >
+              {deleting ? 'Deleting...' : 'Delete Custom Repo'}
+            </button>
+          )}
+        </div>
         <button
           onClick={handleInstall}
           disabled={buttonProps.disabled}
@@ -388,6 +440,35 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
                 className="hub-btn primary"
               >
                 {t('market.confirmAndInstall')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteConfirmVisible && (
+        <div className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4">
+          <div className="hub-card p-6 w-full max-w-md">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Delete Custom Repository
+            </h3>
+            <p className="text-gray-600 mb-4">
+              Are you sure you want to delete the custom repository "{server.display_name}"? This action cannot be undone.
+            </p>
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={() => setDeleteConfirmVisible(false)}
+                className="hub-btn"
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                className="px-4 py-2 bg-red-600 text-white rounded font-medium hover:bg-red-700 disabled:opacity-50"
+                disabled={deleting}
+              >
+                {deleting ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>
