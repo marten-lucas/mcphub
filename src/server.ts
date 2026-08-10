@@ -186,11 +186,28 @@ export class AppServer {
     if (this.frontendPath) {
       console.log('Serving frontend', JSON.stringify({ frontendPath: this.frontendPath }));
       // Serve static files with base path
-      this.app.use(this.basePath, express.static(this.frontendPath));
+      this.app.use(
+        this.basePath,
+        express.static(this.frontendPath, {
+          setHeaders: (res, filePath) => {
+            if (filePath.endsWith('index.html')) {
+              res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            }
+          },
+        }),
+      );
 
       // Add the wildcard route for SPA with base path
       if (fs.existsSync(path.join(this.frontendPath, 'index.html'))) {
-        this.app.get(`${this.basePath}/*`, (_req, res) => {
+        this.app.get(`${this.basePath}/*`, (req, res, next) => {
+          const requestPath = req.path || '';
+          const lastSegment = requestPath.split('/').pop() || '';
+          if (lastSegment.includes('.')) {
+            next();
+            return;
+          }
+
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
           res.sendFile(path.join(this.frontendPath!, 'index.html'));
         });
 

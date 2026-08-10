@@ -634,25 +634,28 @@ const MarketPage: React.FC = () => {
 
   if (selectedServer) {
     return (
-      <MarketServerDetail
-        server={selectedServer}
-        onBack={handleBackToList}
-        onInstall={handleLocalInstall}
-        installing={installing}
-        isInstalled={isServerInstalled(selectedServer.name)}
-        buildTemplateServers={localBuildTemplateServers}
-        onDeploy={(server) => openDeployBuildModal(server.repository?.url || '', server.name)}
-        onDelete={(serverName) => {
-          setSelectedServer(null);
-          void fetchLocalMarketServers();
-          setSearchParams((prev) => {
-            const next = new URLSearchParams(prev);
-            next.set('tab', 'local');
-            return next;
-          });
-        }}
-        onEdit={handleEditCustomRepo}
-      />
+      <>
+        <MarketServerDetail
+          server={selectedServer}
+          onBack={handleBackToList}
+          onInstall={handleLocalInstall}
+          installing={installing}
+          isInstalled={isServerInstalled(selectedServer.name)}
+          buildTemplateServers={localBuildTemplateServers}
+          onDeploy={(server) => openDeployBuildModal(server.repository?.url || '', server.name)}
+          onDelete={(serverName) => {
+            setSelectedServer(null);
+            void fetchLocalMarketServers();
+            setSearchParams((prev) => {
+              const next = new URLSearchParams(prev);
+              next.set('tab', 'local');
+              return next;
+            });
+          }}
+          onEdit={handleEditCustomRepo}
+        />
+        {sharedOverlays}
+      </>
     );
   }
 
@@ -723,6 +726,47 @@ const MarketPage: React.FC = () => {
     : isRegistryTab
       ? registryServersPerPage
       : cloudServersPerPage;
+
+  const sharedOverlays = (
+    <>
+      <DeployWizardSidepane
+        open={deployBuildOpen}
+        repositoryUrl={deployBuildRepo}
+        serverName={deployBuildName}
+        version={deployBuildVersion}
+        preview={deployBuildPreview}
+        planDraftJson={deployBuildPlanDraftJson}
+        submitting={deployBuildSubmitting}
+        confirmOpen={deployBuildConfirmOpen}
+        confirmPlan={deployBuildConfirmPlan}
+        jobs={deployBuildJobs}
+        selectedJob={deployBuildSelectedJob}
+        selectedJobId={deployBuildSelectedJobId}
+        onClose={resetDeployBuildModal}
+        onRepositoryChange={handleDeployBuildRepoChange}
+        onServerNameChange={setDeployBuildName}
+        onVersionChange={setDeployBuildVersion}
+        onPlanDraftJsonChange={setDeployBuildPlanDraftJson}
+        onSubmit={handleDeployBuildSubmit}
+        onConfirm={handleDeployBuildConfirm}
+        onCancelConfirm={() => {
+          setDeployBuildConfirmOpen(false);
+          setDeployBuildConfirmPlan(null);
+        }}
+        onOpenJob={(jobId) => void handleOpenDeployBuildJob(jobId)}
+        onRetryJob={(jobId) => void handleRetryDeployBuildJob(jobId)}
+        onDeinstallJob={(jobId) => void handleDeinstallDeployBuildJob(jobId)}
+      />
+
+      <AddCustomRepoModal
+        isOpen={addCustomRepoModalOpen}
+        onClose={handleCloseAddCustomRepoModal}
+        onSuccess={handleCustomRepoModalSuccess}
+        mode={editingCustomServer ? 'edit' : 'add'}
+        initialServer={editingCustomServer}
+      />
+    </>
+  );
 
   return (
     <div>
@@ -797,42 +841,7 @@ const MarketPage: React.FC = () => {
         </>
       )}
 
-      <DeployWizardSidepane
-        open={deployBuildOpen}
-        repositoryUrl={deployBuildRepo}
-        serverName={deployBuildName}
-        version={deployBuildVersion}
-        preview={deployBuildPreview}
-        planDraftJson={deployBuildPlanDraftJson}
-        submitting={deployBuildSubmitting}
-        confirmOpen={deployBuildConfirmOpen}
-        confirmPlan={deployBuildConfirmPlan}
-        jobs={deployBuildJobs}
-        selectedJob={deployBuildSelectedJob}
-        selectedJobId={deployBuildSelectedJobId}
-        onClose={resetDeployBuildModal}
-        onRepositoryChange={handleDeployBuildRepoChange}
-        onServerNameChange={setDeployBuildName}
-        onVersionChange={setDeployBuildVersion}
-        onPlanDraftJsonChange={setDeployBuildPlanDraftJson}
-        onSubmit={handleDeployBuildSubmit}
-        onConfirm={handleDeployBuildConfirm}
-        onCancelConfirm={() => {
-          setDeployBuildConfirmOpen(false);
-          setDeployBuildConfirmPlan(null);
-        }}
-        onOpenJob={(jobId) => void handleOpenDeployBuildJob(jobId)}
-        onRetryJob={(jobId) => void handleRetryDeployBuildJob(jobId)}
-        onDeinstallJob={(jobId) => void handleDeinstallDeployBuildJob(jobId)}
-      />
-
-      <AddCustomRepoModal
-        isOpen={addCustomRepoModalOpen}
-        onClose={handleCloseAddCustomRepoModal}
-        onSuccess={handleCustomRepoModalSuccess}
-        mode={editingCustomServer ? 'edit' : 'add'}
-        initialServer={editingCustomServer}
-      />
+      {sharedOverlays}
 
       {/* Search bar */}
       {(isLocalTab || isRegistryTab) && (

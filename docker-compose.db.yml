@@ -50,6 +50,8 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+    volumes:
+      - ./custom-servers.json:/app/custom-servers.json
     networks:
       - mcphub-network
 

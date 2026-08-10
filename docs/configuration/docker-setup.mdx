@@ -114,6 +114,7 @@ services:
     volumes:
       - ./mcp_settings.json:/app/mcp_settings.json:ro
       - ./servers.json:/app/servers.json:ro
+      - ./custom-servers.json:/app/custom-servers.json
       - mcphub_data:/app/data
     depends_on:
       postgres:
