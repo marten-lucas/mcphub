@@ -1,11 +1,12 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Zap } from 'lucide-react';
+import { Zap, Download } from 'lucide-react';
 import { CloudServer } from '@/types';
 
 interface CloudServerCardProps {
   server: CloudServer;
   onClick: (server: CloudServer) => void;
+  onInstallFromSource?: (server: CloudServer) => void;
 }
 
 const formatDate = (dateString: string) => {
@@ -20,7 +21,7 @@ const formatDate = (dateString: string) => {
   }
 };
 
-const CloudServerCard: React.FC<CloudServerCardProps> = ({ server, onClick }) => {
+const CloudServerCard: React.FC<CloudServerCardProps> = ({ server, onClick, onInstallFromSource }) => {
   const { t } = useTranslation();
 
   const getDescription = () => {
@@ -112,12 +113,27 @@ const CloudServerCard: React.FC<CloudServerCardProps> = ({ server, onClick }) =>
           )}
           {server.updated_at && <span>{formatDate(server.updated_at)}</span>}
         </div>
-        <span
-          className="hub-mono"
-          style={{ fontSize: 11, color: 'var(--hub-accent)' }}
-        >
-          {t('cloud.viewDetails')} →
-        </span>
+        <div className="flex items-center gap-2">
+          {onInstallFromSource && (
+            <button
+              type="button"
+              className="hub-icon-btn sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                onInstallFromSource(server);
+              }}
+              title="Install from source"
+            >
+              <Download size={13} />
+            </button>
+          )}
+          <span
+            className="hub-mono"
+            style={{ fontSize: 11, color: 'var(--hub-accent)' }}
+          >
+            {t('cloud.viewDetails')} →
+          </span>
+        </div>
       </div>
     </div>
   );

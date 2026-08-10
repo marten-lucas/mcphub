@@ -110,6 +110,8 @@ const MarketPage: React.FC = () => {
   const [sourceInstallJobs, setSourceInstallJobs] = useState<any[]>([]);
   const [sourceInstallSelectedJobId, setSourceInstallSelectedJobId] = useState<string | null>(null);
   const [sourceInstallSelectedJob, setSourceInstallSelectedJob] = useState<any>(null);
+  const [sourceInstallConfirmOpen, setSourceInstallConfirmOpen] = useState(false);
+  const [sourceInstallConfirmPlan, setSourceInstallConfirmPlan] = useState<any>(null);
   const [installedCloudServers, setInstalledCloudServers] = useState<Set<string>>(new Set());
   const [installedRegistryServers, setInstalledRegistryServers] = useState<Set<string>>(new Set());
 
@@ -287,6 +289,36 @@ const MarketPage: React.FC = () => {
     }
   };
 
+  const handleInstallFromSource = (server: CloudServer | RegistryServerEntry) => {
+    let repoUrl = '';
+    let serverName = '';
+
+    if ('server' in server) {
+      // RegistryServerEntry
+      const registryServer = (server as RegistryServerEntry).server;
+      if (registryServer?.remotes && registryServer.remotes.length > 0) {
+        repoUrl = registryServer.remotes[0].url || '';
+      }
+      serverName = registryServer?.name || '';
+    } else {
+      // CloudServer
+      const cloudServer = server as CloudServer;
+      if (cloudServer.github) {
+        repoUrl = cloudServer.github;
+      }
+      serverName = cloudServer.name || '';
+    }
+
+    if (!repoUrl) {
+      showToast('Could not find repository URL for this server.', 'error');
+      return;
+    }
+
+    setSourceInstallRepo(repoUrl);
+    setSourceInstallName(serverName);
+    setSourceInstallOpen(true);
+  };
+
   const resetSourceInstallModal = useCallback(() => {
     setSourceInstallOpen(false);
     setSourceInstallRepo('');
@@ -336,11 +368,30 @@ const MarketPage: React.FC = () => {
       setSourceInstallPlanDraft(nextPlan);
       setSourceInstallPlanDraftJson(JSON.stringify(nextPlan, null, 2));
 
+      // Show confirmation dialog instead of starting immediately
+      setSourceInstallConfirmPlan(nextPlan);
+      setSourceInstallConfirmOpen(true);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Failed to preview installation', 'error');
+    } finally {
+      setSourceInstallSubmitting(false);
+    }
+  };
+
+  const handleSourceInstallConfirm = async () => {
+    if (!sourceInstallConfirmPlan || !sourceInstallRepo.trim()) {
+      showToast('Installation plan is missing. Please try again.', 'error');
+      return;
+    }
+
+    try {
+      setSourceInstallSubmitting(true);
+
       const installResult = await apiPost('/market/source-install', {
         repositoryUrl: sourceInstallRepo.trim(),
         serverName: sourceInstallName.trim() || undefined,
         version: sourceInstallVersion.trim() || undefined,
-        plan: nextPlan,
+        plan: sourceInstallConfirmPlan,
       });
 
       if (!installResult.success) {
@@ -349,7 +400,9 @@ const MarketPage: React.FC = () => {
 
       setSourceInstallSelectedJobId(installResult.data?.id ?? null);
       setSourceInstallSelectedJob(installResult.data ?? null);
-      showToast(`Source install started for ${previewResult.data.serverName}.`, 'success');
+      showToast(`Source install started for ${sourceInstallConfirmPlan.serverName}.`, 'success');
+      setSourceInstallConfirmOpen(false);
+      setSourceInstallConfirmPlan(null);
       resetSourceInstallModal();
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Failed to start source install', 'error');
@@ -653,6 +706,63 @@ const MarketPage: React.FC = () => {
         </div>
       )}
 
+      {sourceInstallConfirmOpen && sourceInstallConfirmPlan && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4">
+          <div className="hub-card w-full max-w-md p-6">
+            <h2 className="text-lg font-semibold mb-3">Confirm Installation</h2>
+            <div className="space-y-3 mb-6 text-sm">
+              <div>
+                <span className="text-[var(--hub-ink-3)]">Server name:</span>
+                <div className="font-medium">{sourceInstallConfirmPlan.serverName}</div>
+              </div>
+              <div>
+                <span className="text-[var(--hub-ink-3)]">Repository:</span>
+                <div className="hub-mono text-[11px] truncate">{sourceInstallConfirmPlan.repositoryUrl}</div>
+              </div>
+              <div>
+                <span className="text-[var(--hub-ink-3)]">Engine:</span>
+                <div className="font-medium">{sourceInstallConfirmPlan.engine}</div>
+              </div>
+              <div>
+                <span className="text-[var(--hub-ink-3)]">Installation steps:</span>
+                <ul className="mt-1 space-y-1 ml-3">
+                  {sourceInstallConfirmPlan.steps.map((step: any) => (
+                    <li key={step.id} className="text-[11px] flex items-start gap-1.5">
+                      <span className="text-[var(--hub-ink-3)]">•</span>
+                      <span>{step.title}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            <div className="bg-[var(--hub-bg-2)] border border-[var(--hub-line)] rounded p-3 mb-4 text-[12px] text-[var(--hub-ink-2)]">
+              Installation will be executed in the background. You can monitor progress in the logs below.
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                className="hub-btn ghost"
+                onClick={() => {
+                  setSourceInstallConfirmOpen(false);
+                  setSourceInstallConfirmPlan(null);
+                }}
+                disabled={sourceInstallSubmitting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="hub-btn primary"
+                onClick={handleSourceInstallConfirm}
+                disabled={sourceInstallSubmitting}
+              >
+                {sourceInstallSubmitting ? 'Starting…' : 'Confirm & Start'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {sourceInstallJobs.length > 0 && (
         <div className="hub-card p-4 mb-5">
           <div className="flex items-center justify-between mb-3">
@@ -817,12 +927,14 @@ const MarketPage: React.FC = () => {
                       key={index}
                       serverEntry={server as RegistryServerEntry}
                       onClick={handleServerClick}
+                      onInstallFromSource={handleInstallFromSource}
                     />
                   ) : (
                     <CloudServerCard
                       key={index}
                       server={server as CloudServer}
                       onClick={handleServerClick}
+                      onInstallFromSource={handleInstallFromSource}
                     />
                   ),
                 )}

@@ -1,11 +1,12 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Package, Globe, Check } from 'lucide-react';
+import { Package, Globe, Check, Download } from 'lucide-react';
 import { RegistryServerEntry } from '@/types';
 
 interface RegistryServerCardProps {
   serverEntry: RegistryServerEntry;
   onClick: (serverEntry: RegistryServerEntry) => void;
+  onInstallFromSource?: (serverEntry: RegistryServerEntry) => void;
 }
 
 const formatDate = (dateString?: string) => {
@@ -21,7 +22,7 @@ const formatDate = (dateString?: string) => {
   }
 };
 
-const RegistryServerCard: React.FC<RegistryServerCardProps> = ({ serverEntry, onClick }) => {
+const RegistryServerCard: React.FC<RegistryServerCardProps> = ({ serverEntry, onClick, onInstallFromSource }) => {
   const { t } = useTranslation();
   const { server, _meta } = serverEntry;
   const officialMeta = _meta?.['io.modelcontextprotocol.registry/official'];
@@ -146,9 +147,24 @@ const RegistryServerCard: React.FC<RegistryServerCardProps> = ({ serverEntry, on
           )}
           {(publishedAt || updatedAt) && <span>{formatDate(updatedAt || publishedAt)}</span>}
         </div>
-        <span className="hub-mono" style={{ fontSize: 11, color: 'var(--hub-accent)' }}>
-          {t('registry.viewDetails')} →
-        </span>
+        <div className="flex items-center gap-2">
+          {onInstallFromSource && (
+            <button
+              type="button"
+              className="hub-icon-btn sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                onInstallFromSource(serverEntry);
+              }}
+              title="Install from source"
+            >
+              <Download size={13} />
+            </button>
+          )}
+          <span className="hub-mono" style={{ fontSize: 11, color: 'var(--hub-accent)' }}>
+            {t('registry.viewDetails')} →
+          </span>
+        </div>
       </div>
     </div>
   );
