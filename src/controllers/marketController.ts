@@ -159,7 +159,7 @@ export const getMarketServersByTag = (req: Request, res: Response): void => {
 // Register a custom MCP server from a Git repository
 export const registerCustomMarketServer = (req: Request, res: Response): void => {
   try {
-    const { serverName, repositoryUrl, tags } = req.body;
+    const { serverName, repositoryUrl, tags, version } = req.body;
 
     if (!serverName || !repositoryUrl) {
       res.status(400).json({
@@ -184,7 +184,7 @@ export const registerCustomMarketServer = (req: Request, res: Response): void =>
       ? tags.filter((tag: unknown): tag is string => typeof tag === 'string' && tag.trim().length > 0)
       : [];
 
-    const newServer = registerCustomServer(serverName, repositoryUrl, parsedTags);
+    const newServer = registerCustomServer(serverName, repositoryUrl, parsedTags, version);
     const response: ApiResponse = {
       success: true,
       data: newServer,
@@ -204,7 +204,7 @@ export const registerCustomMarketServer = (req: Request, res: Response): void =>
 export const updateCustomMarketServer = (req: Request, res: Response): void => {
   try {
     const { serverName } = req.params;
-    const { repositoryUrl, displayName, newServerName, tags } = req.body;
+    const { repositoryUrl, displayName, newServerName, tags, version } = req.body;
 
     if (!serverName) {
       res.status(400).json({
@@ -214,10 +214,10 @@ export const updateCustomMarketServer = (req: Request, res: Response): void => {
       return;
     }
 
-    if (!repositoryUrl && !displayName && !newServerName && !tags) {
+    if (!repositoryUrl && !displayName && !newServerName && !tags && typeof version === 'undefined') {
       res.status(400).json({
         success: false,
-        message: 'At least one of repositoryUrl, displayName, newServerName, or tags must be provided',
+        message: 'At least one of repositoryUrl, displayName, newServerName, tags, or version must be provided',
       });
       return;
     }
@@ -244,6 +244,7 @@ export const updateCustomMarketServer = (req: Request, res: Response): void => {
       displayName,
       newServerName,
       tags: parsedTags,
+      version,
     });
     const response: ApiResponse = {
       success: true,

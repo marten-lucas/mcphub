@@ -10,11 +10,11 @@ interface AddCustomRepoModalProps {
   mode?: 'add' | 'edit';
   initialServer?: {
     name: string;
-    display_name?: string;
     repository?: {
       url?: string;
     };
     tags?: string[];
+    version?: string;
   } | null;
 }
 
@@ -29,7 +29,7 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
 
   const [repositoryUrl, setRepositoryUrl] = useState('');
   const [serverName, setServerName] = useState('');
-  const [displayName, setDisplayName] = useState('');
+  const [versionInput, setVersionInput] = useState('latest');
   const [tagsInput, setTagsInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +37,7 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
   const resetForm = () => {
     setRepositoryUrl('');
     setServerName('');
-    setDisplayName('');
+    setVersionInput('latest');
     setTagsInput('');
     setError(null);
   };
@@ -67,6 +67,26 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
     } catch {
       return '';
     }
+  };
+
+  const deriveVersionFromRepositoryUrl = (value: string): string => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return 'latest';
+    }
+
+    const normalizedUrl = trimmed.replace(/^git@/, '').replace(/^ssh:\/\//, 'https://');
+    const explicitRefMatch = trimmed.match(/[?&]ref=([^&#]+)/i);
+    const pathRefMatch = trimmed.match(/\/(?:tree|blob|releases\/tag|archive\/refs\/tags|archive)\/([^/?#]+)/i);
+    const versionFromUrl = explicitRefMatch?.[1] || pathRefMatch?.[1] || '';
+
+    if (!versionFromUrl) {
+      return 'latest';
+    }
+
+    return decodeURIComponent(versionFromUrl)
+      .replace(/^refs\/heads\//i, '')
+      .replace(/^refs\/tags\//i, '');
   };
 
   const deriveTagsFromRepositoryUrl = (value: string): string[] => {
@@ -102,9 +122,11 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
     }
 
     if (mode === 'edit' && initialServer) {
-      setRepositoryUrl(initialServer.repository?.url || '');
+      const repoUrl = initialServer.repository?.url || '';
+      const derivedVersion = initialServer.version || deriveVersionFromRepositoryUrl(repoUrl);
+      setRepositoryUrl(repoUrl);
       setServerName(initialServer.name || '');
-      setDisplayName(initialServer.display_name || initialServer.name || '');
+      setVersionInput(derivedVersion || 'latest');
       setTagsInput(initialServer.tags?.join(', ') || '');
       setError(null);
       return;
@@ -124,6 +146,8 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
         return;
       }
 
+      const resolvedVersion = versionInput.trim() || 'latest';
+
       try {
         new URL(repositoryUrl);
       } catch {
@@ -138,7 +162,7 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
         const result = await apiPut(`/market/custom-servers/${encodeURIComponent(initialServer.name)}`, {
           newServerName: serverName.trim(),
           repositoryUrl,
-          displayName: displayName.trim() || undefined,
+          version: resolvedVersion,
           tags: normalizedTags,
         });
 
@@ -157,6 +181,7 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
         const result = await apiPost('/market/custom-servers', {
           serverName: serverName.trim(),
           repositoryUrl,
+          version: resolvedVersion,
           tags: normalizedTags,
         });
 
@@ -185,6 +210,7 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
 
     if (!value.trim()) {
       setServerName('');
+      setVersionInput('latest');
       setTagsInput('');
       return;
     }
@@ -192,6 +218,13 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
     const derivedServerName = deriveServerNameFromRepositoryUrl(value);
     if (derivedServerName && !serverName.trim()) {
       setServerName(derivedServerName);
+    }
+
+    const derivedVersion = deriveVersionFromRepositoryUrl(value);
+    if (!versionInput.trim()) {
+      setVersionInput(derivedVersion);
+    } else if (versionInput === 'latest' && derivedVersion !== 'latest') {
+      setVersionInput(derivedVersion);
     }
 
     const suggestedTags = deriveTagsFromRepositoryUrl(value);
@@ -203,117 +236,102 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg w-full max-w-md mx-4">
-        <div className="flex justify-between items-center p-6 border-b">
-          <h2 className="text-xl font-bold">
-            {mode === 'edit' ? 'Edit custom repo' : 'Add to market'}
-          </h2>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+      <div className="hub-card w-full max-w-xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-semibold">
+              {mode === 'edit' ? 'Edit custom repo' : 'Add to market'}
+            </h2>
+            <p className="text-sm text-[var(--hub-ink-3)]">
+              {mode === 'edit'
+                ? 'Update the repository registration and version/tag for this custom server.'
+                : 'Register a custom repository in the marketplace so it can be installed later.'}
+            </p>
+          </div>
           <button
+            type="button"
+            className="hub-icon-btn sm"
             onClick={() => {
               resetForm();
               onClose();
             }}
-            className="text-gray-500 hover:text-gray-700"
             disabled={loading}
           >
-            <X size={20} />
+            <X size={13} />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+            <div className="rounded border border-[var(--hub-line)] bg-[var(--hub-surface)] p-3 text-sm text-[var(--hub-ink-2)]">
               {error}
             </div>
           )}
 
-          <div>
-            <label htmlFor="serverName" className="block text-sm font-medium mb-2">
-              Server Name *
-            </label>
+          <label className="block">
+            <span className="text-sm font-medium">Repository URL</span>
             <input
-              id="serverName"
-              type="text"
-              value={serverName}
-              onChange={(e) => setServerName(e.target.value)}
-              placeholder="e.g., my-custom-mcp"
-              className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              disabled={loading}
-            />
-            <p className="mt-1 text-xs text-gray-500">
-              Unique identifier for this custom server
-            </p>
-          </div>
-
-          <div>
-            <label htmlFor="displayName" className="block text-sm font-medium mb-2">
-              Display Name
-            </label>
-            <input
-              id="displayName"
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Optional display label"
-              className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              disabled={loading}
-            />
-          </div>
-
-          <div>
-            <label htmlFor="repositoryUrl" className="block text-sm font-medium mb-2">
-              Repository URL *
-            </label>
-            <input
-              id="repositoryUrl"
+              className="hub-input mt-1 w-full"
               type="text"
               value={repositoryUrl}
               onChange={(e) => handleRepositoryUrlChange(e.target.value)}
               placeholder="https://github.com/user/repo.git"
-              className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={loading}
+              required
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-sm font-medium">Server name</span>
+            <input
+              className="hub-input mt-1 w-full"
+              type="text"
+              value={serverName}
+              onChange={(e) => setServerName(e.target.value)}
+              placeholder="my-custom-mcp"
+              disabled={loading}
+              required
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-sm font-medium">Version / tag</span>
+            <input
+              className="hub-input mt-1 w-full"
+              type="text"
+              value={versionInput}
+              onChange={(e) => setVersionInput(e.target.value)}
+              placeholder="latest or v1.2.3"
               disabled={loading}
             />
-            <p className="mt-1 text-xs text-gray-500">
-              Git repository URL (must be accessible from this server)
-            </p>
-          </div>
+          </label>
 
-          <div>
-            <label htmlFor="tagsInput" className="block text-sm font-medium mb-2">
-              Tags
-            </label>
+          <label className="block">
+            <span className="text-sm font-medium">Tags</span>
             <input
-              id="tagsInput"
+              className="hub-input mt-1 w-full"
               type="text"
               value={tagsInput}
               onChange={(e) => setTagsInput(e.target.value)}
               placeholder="github, mcp, custom"
-              className="w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               disabled={loading}
             />
-            <p className="mt-1 text-xs text-gray-500">
-              Comma-separated tags. Suggestions are prefilled from the repository URL.
-            </p>
-          </div>
+          </label>
 
-          <div className="flex gap-3 pt-4">
+          <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
+              className="hub-btn ghost"
               onClick={() => {
                 resetForm();
                 onClose();
               }}
-              className="flex-1 px-4 py-2 border rounded-md text-gray-700 hover:bg-gray-50 disabled:opacity-50"
               disabled={loading}
             >
               Cancel
             </button>
-            <button
-              type="submit"
-              className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-              disabled={loading}
-            >
+            <button type="submit" className="hub-btn primary" disabled={loading}>
               {loading ? (mode === 'edit' ? 'Updating...' : 'Adding...') : mode === 'edit' ? 'Save' : 'Add to market'}
             </button>
           </div>

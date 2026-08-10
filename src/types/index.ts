@@ -84,6 +84,7 @@ export interface MarketServer {
   arguments: Record<string, MarketServerArgument>;
   tools: MarketServerTool[];
   is_official?: boolean;
+  version?: string;
 }
 
 export type ChangelogCategory = 'feature' | 'fix' | 'breaking' | 'security';

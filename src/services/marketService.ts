@@ -100,10 +100,12 @@ const deriveTagsFromRepositoryUrl = (repositoryUrl: string): string[] => {
 export const registerCustomServer = (
   serverName: string,
   repositoryUrl: string,
-  tags: string[] = []
+  tags: string[] = [],
+  version?: string,
 ): MarketServer => {
   const customServers = getCustomServers();
   const resolvedTags = ensureCustomTag(tags.length > 0 ? tags : deriveTagsFromRepositoryUrl(repositoryUrl));
+  const resolvedVersion = typeof version === 'string' && version.trim() ? version.trim() : 'latest';
 
   // Create a new market server entry for custom repo
   const newServer: MarketServer = {
@@ -124,6 +126,7 @@ export const registerCustomServer = (
     installations: {},
     arguments: {},
     tools: [],
+    version: resolvedVersion,
   };
 
   customServers[serverName] = newServer;
@@ -143,6 +146,7 @@ export const updateCustomServer = (
     displayName?: string;
     newServerName?: string;
     tags?: string[];
+    version?: string;
   }
 ): MarketServer => {
   const customServers = getCustomServers();
@@ -178,6 +182,10 @@ export const updateCustomServer = (
 
   if (updates.tags) {
     server.tags = ensureCustomTag(updates.tags);
+  }
+
+  if (typeof updates.version === 'string') {
+    server.version = updates.version.trim() ? updates.version.trim() : 'latest';
   }
 
   // Write back to file
