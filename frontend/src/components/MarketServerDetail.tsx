@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useToast } from '@/contexts/ToastContext';
 import { MarketServer, MarketServerInstallation } from '@/types';
@@ -36,8 +36,132 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
   const [detectedVariables, setDetectedVariables] = useState<string[]>([]);
   const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [githubMeta, setGithubMeta] = useState<{ owner?: string; repo?: string; defaultBranch?: string; htmlUrl?: string } | null>(null);
+  const [readmeContent, setReadmeContent] = useState<string | null>(null);
+  const [readmeLoading, setReadmeLoading] = useState(false);
+  const [readmeError, setReadmeError] = useState<string | null>(null);
 
   const isCustomServer = server.categories?.includes('Custom') || server.tags?.includes('Custom');
+
+  const parseGitHubRepository = (repositoryUrl: string) => {
+    try {
+      const normalizedUrl = repositoryUrl.trim().replace(/^git@/, '').replace(/^ssh:\/\//, 'https://');
+      const parsedUrl = new URL(normalizedUrl);
+
+      if (!parsedUrl.hostname.toLowerCase().includes('github.com')) {
+        return null;
+      }
+
+      const pathSegments = parsedUrl.pathname.split('/').filter(Boolean);
+      if (pathSegments.length < 2) {
+        return null;
+      }
+
+      return {
+        owner: pathSegments[0],
+        repo: pathSegments[1].replace(/\.git$/i, ''),
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadRepositoryDetails = async () => {
+      const repositoryUrl = server.repository?.url?.trim();
+      const parsedRepository = repositoryUrl ? parseGitHubRepository(repositoryUrl) : null;
+
+      if (!parsedRepository) {
+        if (!cancelled) {
+          setGithubMeta(null);
+          setReadmeContent(null);
+          setReadmeLoading(false);
+          setReadmeError(null);
+        }
+        return;
+      }
+
+      if (!cancelled) {
+        setReadmeLoading(true);
+        setReadmeError(null);
+      }
+
+      try {
+        const metadataResponse = await fetch(
+          `https://api.github.com/repos/${parsedRepository.owner}/${parsedRepository.repo}`,
+          {
+            headers: {
+              Accept: 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+              'User-Agent': 'mcphub',
+            },
+          },
+        );
+
+        if (!metadataResponse.ok) {
+          throw new Error('Repository metadata not available');
+        }
+
+        const metadata = await metadataResponse.json();
+        const resolvedMeta = {
+          owner: metadata.owner?.login || parsedRepository.owner,
+          repo: metadata.name || parsedRepository.repo,
+          defaultBranch: metadata.default_branch || 'main',
+          htmlUrl: metadata.html_url || `https://github.com/${parsedRepository.owner}/${parsedRepository.repo}`,
+        };
+
+        if (!cancelled) {
+          setGithubMeta(resolvedMeta);
+        }
+
+        const readmeCandidates = [
+          `https://raw.githubusercontent.com/${parsedRepository.owner}/${parsedRepository.repo}/${resolvedMeta.defaultBranch}/README.md`,
+          `https://raw.githubusercontent.com/${parsedRepository.owner}/${parsedRepository.repo}/${resolvedMeta.defaultBranch}/README`,
+          `https://raw.githubusercontent.com/${parsedRepository.owner}/${parsedRepository.repo}/${resolvedMeta.defaultBranch}/readme.md`,
+          `https://raw.githubusercontent.com/${parsedRepository.owner}/${parsedRepository.repo}/${resolvedMeta.defaultBranch}/readme`,
+          `https://raw.githubusercontent.com/${parsedRepository.owner}/${parsedRepository.repo}/${resolvedMeta.defaultBranch}/docs/README.md`,
+        ];
+
+        let loadedReadme: string | null = null;
+
+        for (const candidate of readmeCandidates) {
+          const readmeResponse = await fetch(candidate);
+          if (readmeResponse.ok) {
+            loadedReadme = await readmeResponse.text();
+            break;
+          }
+        }
+
+        if (!cancelled) {
+          if (loadedReadme) {
+            setReadmeContent(loadedReadme);
+            setReadmeError(null);
+          } else {
+            setReadmeContent(null);
+            setReadmeError('README not available for this repository.');
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setGithubMeta(null);
+          setReadmeContent(null);
+          setReadmeError('README could not be loaded from GitHub.');
+        }
+      } finally {
+        if (!cancelled) {
+          setReadmeLoading(false);
+        }
+      }
+    };
+
+    void loadRepositoryDetails();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [server.repository?.url]);
 
   // Helper function to determine button state
   const getButtonProps = () => {
@@ -71,6 +195,31 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
     setPendingPayload(null);
   };
 
+  const deriveServerIdentifier = (repositoryUrl?: string) => {
+    if (!repositoryUrl) {
+      return '';
+    }
+
+    try {
+      const parsedUrl = new URL(repositoryUrl);
+      const pathSegments = parsedUrl.pathname.split('/').filter(Boolean);
+      const repoSegment = pathSegments[pathSegments.length - 1]?.replace(/\.(git|zip|tar)$/i, '') || '';
+
+      if (!repoSegment) {
+        return '';
+      }
+
+      return repoSegment
+        .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+        .replace(/[_\s]+/g, '-')
+        .replace(/[^a-zA-Z0-9._-]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .toLowerCase();
+    } catch {
+      return '';
+    }
+  };
+
   const handleConfirmInstall = async () => {
     if (pendingPayload) {
       await proceedWithInstall(pendingPayload);
@@ -98,13 +247,16 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
 
   const handleDeleteConfirm = async () => {
     if (!isCustomServer) return;
-    
+
+    const serverIdentifier =
+      server.name || deriveServerIdentifier(server.repository?.url) || server.repository?.url || server.display_name || '';
+
     setDeleting(true);
     try {
-      const response = await apiDelete(`/market/custom-servers/${server.name}`);
+      const response = await apiDelete(`/market/custom-servers/${encodeURIComponent(serverIdentifier)}`);
       if (response.success) {
-        showToast(`Custom server "${server.display_name}" deleted successfully`, 'success');
-        onDelete?.(server.name);
+        showToast(`Custom server "${server.display_name || server.name || 'Custom server'}" deleted successfully`, 'success');
+        onDelete?.(serverIdentifier);
         onBack();
       } else {
         setError(response.message || 'Failed to delete custom server');
@@ -164,6 +316,23 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
 
   const buttonProps = getButtonProps();
   const preferredInstallation = getPreferredInstallation();
+  const orderedCategories = (() => {
+    const categories = (server.categories || []).filter(Boolean);
+    const officialCategories = categories.filter((category) => category.toLowerCase() !== 'custom');
+    const customCategories = categories.filter((category) => category.toLowerCase() === 'custom');
+
+    const ordered = [...officialCategories];
+    if (customCategories.length > 0) {
+      if (officialCategories.length > 0) {
+        ordered.push('separator');
+      }
+      ordered.push(...customCategories);
+    }
+
+    return ordered;
+  })();
+  const authorName = githubMeta?.owner || server.author?.name || t('market.unknown');
+  const repositoryName = githubMeta?.repo || server.name;
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
@@ -191,8 +360,8 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
             {server.display_name}
             <span className="text-sm font-normal text-gray-500 ml-2">({server.name})</span>
             <span className="text-sm font-normal text-gray-600 ml-4">
-              {t('market.author')}: {server.author?.name || t('market.unknown')} •{' '}
-              {t('market.license')}: {server.license} •
+              {t('market.author')}: {authorName} • {t('market.license')}: {server.license} •{' '}
+              <span className="font-medium text-gray-700">{repositoryName}</span>
               <a
                 href={server.repository.url}
                 target="_blank"
@@ -228,11 +397,24 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
           {t('market.categories')} & {t('market.tags')}
         </h3>
         <div className="flex flex-wrap gap-2">
-          {server.categories?.map((category, index) => (
-            <span key={`cat-${index}`} className="bg-gray-100 dark:bg-gray-800 text-gray-800 px-3 py-1 rounded">
-              {category}
-            </span>
-          ))}
+          {orderedCategories.map((category, index) => {
+            if (category === 'separator') {
+              return (
+                <span key={`sep-${index}`} className="text-sm text-gray-400">
+                  •
+                </span>
+              );
+            }
+
+            return (
+              <span
+                key={`cat-${index}`}
+                className="bg-gray-100 dark:bg-gray-800 text-gray-800 px-3 py-1 rounded"
+              >
+                {category}
+              </span>
+            );
+          })}
           {server.tags &&
             server.tags.map((tag, index) => (
               <span
@@ -245,101 +427,34 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
         </div>
       </div>
 
-      {server.arguments && Object.keys(server.arguments).length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-lg font-semibold mb-3">{t('market.arguments')}</h3>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-              <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
-                    {t('market.argumentName')}
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
-                    {t('market.description')}
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
-                    {t('market.required')}
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">
-                    {t('market.example')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                {Object.entries(server.arguments).map(([name, arg], index) => (
-                  <tr key={index}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {name}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-500">{arg.description}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {arg.required ? (
-                        <span className="text-green-600">✓</span>
-                      ) : (
-                        <span className="text-gray-600">✗</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <code className="bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">{arg.example}</code>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
       <div className="mb-6">
-        <h3 className="text-lg font-semibold mb-3">{t('market.tools')}</h3>
-        <div className="space-y-4">
-          {server.tools?.map((tool, index) => (
-            <div key={index} className="border border-gray-200 dark:border-gray-700 rounded p-4">
-              <h4 className="font-medium mb-2">
-                {tool.name}
-                <button
-                  type="button"
-                  onClick={() => {
-                    // Toggle visibility of schema (simplified for this implementation)
-                    const element = document.getElementById(`schema-${index}`);
-                    if (element) {
-                      element.classList.toggle('hidden');
-                    }
-                  }}
-                  className="text-sm text-blue-500 font-normal hover:underline focus:outline-none ml-2"
-                >
-                  {t('market.viewSchema')}
-                </button>
-              </h4>
-              <p className="text-gray-600 mb-2">{tool.description}</p>
-              <div className="mt-2">
-                <pre
-                  id={`schema-${index}`}
-                  className="hidden bg-gray-50 dark:bg-gray-800 p-3 rounded text-sm overflow-auto mt-2"
-                >
-                  {JSON.stringify(tool.inputSchema, null, 2)}
-                </pre>
-              </div>
-            </div>
-          ))}
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-lg font-semibold">README</h3>
+          {githubMeta && (
+            <a
+              href={githubMeta.htmlUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-blue-600 hover:underline"
+            >
+              View on GitHub
+            </a>
+          )}
         </div>
-      </div>
-
-      {server.examples && server.examples.length > 0 && (
-        <div className="mb-6">
-          <h3 className="text-lg font-semibold mb-3">{t('market.examples')}</h3>
-          <div className="space-y-4">
-            {server.examples.map((example, index) => (
-              <div key={index} className="border border-gray-200 dark:border-gray-700 rounded p-4">
-                <h4 className="font-medium mb-2">{example.title}</h4>
-                <p className="text-gray-600 mb-2">{example.description}</p>
-                <pre className="bg-gray-50 dark:bg-gray-800 p-3 rounded text-sm overflow-auto">{example.prompt}</pre>
-              </div>
-            ))}
+        {readmeLoading ? (
+          <div className="rounded border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
+            Loading README from GitHub...
           </div>
-        </div>
-      )}
+        ) : readmeContent ? (
+          <div className="max-h-[60vh] overflow-auto rounded border border-gray-200 bg-gray-50 p-4 text-sm leading-7 text-gray-700 whitespace-pre-wrap">
+            {readmeContent}
+          </div>
+        ) : (
+          <div className="rounded border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
+            {readmeError || 'No README was found for this repository.'}
+          </div>
+        )}
+      </div>
 
       <div className="mt-6 flex justify-between items-center gap-3">
         <div className="flex gap-2">

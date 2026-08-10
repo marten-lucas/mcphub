@@ -12,6 +12,40 @@ export const getCustomServersPath = (): string => {
   return getConfigFilePath('custom-servers.json', 'Servers');
 };
 
+const resolveCustomServerKey = (
+  customServers: Record<string, MarketServer>,
+  serverIdentifier: string,
+): string | null => {
+  if (!serverIdentifier) {
+    return null;
+  }
+
+  const normalizedIdentifier = decodeURIComponent(serverIdentifier).trim();
+  if (!normalizedIdentifier) {
+    return null;
+  }
+
+  if (customServers[normalizedIdentifier]) {
+    return normalizedIdentifier;
+  }
+
+  for (const [key, server] of Object.entries(customServers)) {
+    if (server.name === normalizedIdentifier) {
+      return key;
+    }
+
+    if (server.display_name === normalizedIdentifier) {
+      return key;
+    }
+
+    if (server.repository?.url === normalizedIdentifier) {
+      return key;
+    }
+  }
+
+  return null;
+};
+
 // Load custom servers from custom-servers.json
 export const getCustomServers = (): Record<string, MarketServer> => {
   try {
@@ -21,9 +55,9 @@ export const getCustomServers = (): Record<string, MarketServer> => {
     }
     const data = fs.readFileSync(customPath, 'utf8');
     const customServers = JSON.parse(data) as Record<string, MarketServer>;
-    
-    // Mark all custom servers with Custom tag
-    Object.values(customServers).forEach((server) => {
+
+    Object.entries(customServers).forEach(([key, server]) => {
+      server.name = key;
       server.is_official = false;
       if (!server.tags) server.tags = [];
       if (!server.tags.includes('Custom')) {
@@ -34,7 +68,7 @@ export const getCustomServers = (): Record<string, MarketServer> => {
         server.categories.push('Custom');
       }
     });
-    
+
     return customServers;
   } catch (error) {
     console.error('Failed to load custom servers:', error);
@@ -58,6 +92,29 @@ const ensureCustomTag = (tags: string[] = []): string[] => {
   }
 
   return cleanedTags;
+};
+
+const deriveGitHubOwnerFromRepositoryUrl = (repositoryUrl: string): string | null => {
+  try {
+    const normalizedUrl = repositoryUrl.trim().replace(/^git@/, '').replace(/^ssh:\/\//, 'https://');
+    const parsedUrl = new URL(normalizedUrl);
+
+    if (!parsedUrl.hostname.toLowerCase().includes('github.com')) {
+      return null;
+    }
+
+    const pathnameSegments = parsedUrl.pathname.split('/').filter(Boolean);
+    if (pathnameSegments.length >= 2) {
+      return pathnameSegments[0];
+    }
+  } catch {
+    const scpLikeMatch = repositoryUrl.match(/^(?:[^@]+@)?([^:]+):([^/]+)\/([^/]+?)(?:\.git)?(?:\/)?$/i);
+    if (scpLikeMatch?.[1] && scpLikeMatch?.[2]) {
+      return scpLikeMatch[2];
+    }
+  }
+
+  return null;
 };
 
 const deriveTagsFromRepositoryUrl = (repositoryUrl: string): string[] => {
@@ -117,7 +174,7 @@ export const registerCustomServer = (
       url: repositoryUrl,
     },
     homepage: repositoryUrl,
-    author: { name: 'User' },
+    author: { name: deriveGitHubOwnerFromRepositoryUrl(repositoryUrl) || 'User' },
     license: 'Unknown',
     is_official: false,
     categories: ['Custom'],
@@ -150,20 +207,21 @@ export const updateCustomServer = (
   }
 ): MarketServer => {
   const customServers = getCustomServers();
+  const resolvedServerKey = resolveCustomServerKey(customServers, serverName);
 
-  if (!customServers[serverName]) {
+  if (!resolvedServerKey) {
     throw new Error(`Custom server "${serverName}" not found`);
   }
 
-  const server = customServers[serverName];
+  const server = customServers[resolvedServerKey];
 
-  if (updates.newServerName && updates.newServerName !== serverName) {
+  if (updates.newServerName && updates.newServerName !== resolvedServerKey) {
     if (customServers[updates.newServerName]) {
       throw new Error(`Custom server "${updates.newServerName}" already exists`);
     }
 
     customServers[updates.newServerName] = server;
-    delete customServers[serverName];
+    delete customServers[resolvedServerKey];
     server.name = updates.newServerName;
   }
 
@@ -174,6 +232,10 @@ export const updateCustomServer = (
     };
     server.homepage = updates.repositoryUrl;
     server.description = `Custom MCP server from ${updates.repositoryUrl}`;
+    const githubOwner = deriveGitHubOwnerFromRepositoryUrl(updates.repositoryUrl);
+    if (githubOwner) {
+      server.author = { name: githubOwner };
+    }
   }
 
   if (updates.displayName) {
@@ -198,13 +260,14 @@ export const updateCustomServer = (
 // Delete a custom server
 export const deleteCustomServer = (serverName: string): void => {
   const customServers = getCustomServers();
-  
-  if (!customServers[serverName]) {
+  const resolvedServerKey = resolveCustomServerKey(customServers, serverName);
+
+  if (!resolvedServerKey) {
     throw new Error(`Custom server "${serverName}" not found`);
   }
-  
-  delete customServers[serverName];
-  
+
+  delete customServers[resolvedServerKey];
+
   // Write back to file
   const customPath = getCustomServersPath();
   fs.writeFileSync(customPath, JSON.stringify(customServers, null, 2), 'utf8');
