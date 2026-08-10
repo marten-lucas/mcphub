@@ -30,7 +30,6 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
   const [repositoryUrl, setRepositoryUrl] = useState('');
   const [serverName, setServerName] = useState('');
   const [versionInput, setVersionInput] = useState('latest');
-  const [tagsInput, setTagsInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,15 +37,8 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
     setRepositoryUrl('');
     setServerName('');
     setVersionInput('latest');
-    setTagsInput('');
     setError(null);
   };
-
-  const parseTags = (value: string): string[] =>
-    value
-      .split(',')
-      .map((tag) => tag.trim())
-      .filter(Boolean);
 
   const deriveServerNameFromRepositoryUrl = (value: string): string => {
     try {
@@ -75,7 +67,6 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
       return 'latest';
     }
 
-    const normalizedUrl = trimmed.replace(/^git@/, '').replace(/^ssh:\/\//, 'https://');
     const explicitRefMatch = trimmed.match(/[?&]ref=([^&#]+)/i);
     const pathRefMatch = trimmed.match(/\/(?:tree|blob|releases\/tag|archive\/refs\/tags|archive)\/([^/?#]+)/i);
     const versionFromUrl = explicitRefMatch?.[1] || pathRefMatch?.[1] || '';
@@ -89,33 +80,6 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
       .replace(/^refs\/tags\//i, '');
   };
 
-  const deriveTagsFromRepositoryUrl = (value: string): string[] => {
-    try {
-      const parsedUrl = new URL(value);
-      const host = parsedUrl.hostname.replace(/^www\./, '');
-      const pathSegments = parsedUrl.pathname.split('/').filter(Boolean);
-      const tags = new Set<string>();
-
-      if (host.includes('github')) tags.add('github');
-      else if (host.includes('gitlab')) tags.add('gitlab');
-      else if (host.includes('bitbucket')) tags.add('bitbucket');
-      else tags.add('git');
-
-      if (pathSegments[0]) tags.add(pathSegments[0]);
-      if (pathSegments[1]) {
-        const repoSlug = pathSegments[1].replace(/\.(git|zip|tar)$/i, '');
-        repoSlug
-          .split(/[-_./]+/)
-          .filter((segment) => segment.length > 1)
-          .forEach((segment) => tags.add(segment));
-      }
-
-      return Array.from(tags).slice(0, 6);
-    } catch {
-      return [];
-    }
-  };
-
   useEffect(() => {
     if (!isOpen) {
       return;
@@ -127,7 +91,6 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
       setRepositoryUrl(repoUrl);
       setServerName(initialServer.name || '');
       setVersionInput(derivedVersion || 'latest');
-      setTagsInput(initialServer.tags?.join(', ') || '');
       setError(null);
       return;
     }
@@ -155,22 +118,15 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
         return;
       }
 
-      const tags = parseTags(tagsInput);
-      const normalizedTags = tags.length > 0 ? tags : deriveTagsFromRepositoryUrl(repositoryUrl);
-
       if (mode === 'edit' && initialServer) {
         const result = await apiPut(`/market/custom-servers/${encodeURIComponent(initialServer.name)}`, {
           newServerName: serverName.trim(),
           repositoryUrl,
           version: resolvedVersion,
-          tags: normalizedTags,
         });
 
         if (result.success) {
-          showToast({
-            type: 'success',
-            message: `Custom server "${serverName}" updated successfully`,
-          });
+          showToast(`Custom server "${serverName}" updated successfully`, 'success');
           resetForm();
           onClose();
           onSuccess?.(serverName.trim(), 'edit');
@@ -182,14 +138,10 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
           serverName: serverName.trim(),
           repositoryUrl,
           version: resolvedVersion,
-          tags: normalizedTags,
         });
 
         if (result.success) {
-          showToast({
-            type: 'success',
-            message: `Custom server "${serverName}" registered successfully`,
-          });
+          showToast(`Custom server "${serverName}" registered successfully`, 'success');
           resetForm();
           onClose();
           onSuccess?.(serverName.trim(), 'add');
@@ -211,7 +163,6 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
     if (!value.trim()) {
       setServerName('');
       setVersionInput('latest');
-      setTagsInput('');
       return;
     }
 
@@ -225,11 +176,6 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
       setVersionInput(derivedVersion);
     } else if (versionInput === 'latest' && derivedVersion !== 'latest') {
       setVersionInput(derivedVersion);
-    }
-
-    const suggestedTags = deriveTagsFromRepositoryUrl(value);
-    if (suggestedTags.length > 0 && !tagsInput.trim()) {
-      setTagsInput(suggestedTags.join(', '));
     }
   };
 
@@ -303,18 +249,6 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
               value={versionInput}
               onChange={(e) => setVersionInput(e.target.value)}
               placeholder="latest or v1.2.3"
-              disabled={loading}
-            />
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-medium">Tags</span>
-            <input
-              className="hub-input mt-1 w-full"
-              type="text"
-              value={tagsInput}
-              onChange={(e) => setTagsInput(e.target.value)}
-              placeholder="github, mcp, custom"
               disabled={loading}
             />
           </label>
