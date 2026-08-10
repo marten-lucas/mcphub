@@ -62,13 +62,13 @@ import {
   deleteCustomMarketServer,
 } from '../controllers/marketController.js';
 import {
-  createSourceInstallHandler,
-  deinstallSourceInstallHandler,
-  getSourceInstallJobHandler,
-  listSourceInstallJobsHandler,
-  previewSourceInstallHandler,
-  retrySourceInstallHandler,
-} from '../controllers/sourceInstallController.js';
+  createDeployBuildHandler,
+  deinstallDeployBuildHandler,
+  getDeployBuildJobHandler,
+  listDeployBuildJobsHandler,
+  previewDeployBuildHandler,
+  retryDeployBuildHandler,
+} from '../controllers/deployBuildController.js';
 import {
   getAllCloudServers,
   getCloudServer,
@@ -384,12 +384,12 @@ export const initRoutes = async (app: express.Application): Promise<void> => {
   authenticatedRouter.post('/market/custom-servers', registerCustomMarketServer);
   authenticatedRouter.put('/market/custom-servers/:serverName', updateCustomMarketServer);
   authenticatedRouter.delete('/market/custom-servers/:serverName', deleteCustomMarketServer);
-  authenticatedRouter.post('/market/source-install/preview', previewSourceInstallHandler);
-  authenticatedRouter.post('/market/source-install', createSourceInstallHandler);
-  authenticatedRouter.get('/market/source-install/jobs', listSourceInstallJobsHandler);
-  authenticatedRouter.get('/market/source-install/jobs/:jobId', getSourceInstallJobHandler);
-  authenticatedRouter.post('/market/source-install/jobs/:jobId/retry', retrySourceInstallHandler);
-  authenticatedRouter.post('/market/source-install/jobs/:jobId/deinstall', deinstallSourceInstallHandler);
+  authenticatedRouter.post('/market/deploy/preview', previewDeployBuildHandler);
+  authenticatedRouter.post('/market/deploy', createDeployBuildHandler);
+  authenticatedRouter.get('/market/deploy/jobs', listDeployBuildJobsHandler);
+  authenticatedRouter.get('/market/deploy/jobs/:jobId', getDeployBuildJobHandler);
+  authenticatedRouter.post('/market/deploy/jobs/:jobId/retry', retryDeployBuildHandler);
+  authenticatedRouter.post('/market/deploy/jobs/:jobId/deinstall', deinstallDeployBuildHandler);
 
   // Cloud Market routes
   authenticatedRouter.get('/cloud/servers', getAllCloudServers);

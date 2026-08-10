@@ -7,9 +7,9 @@ import axios from 'axios';
 import { addOrUpdateServer, removeServer } from './mcpService.js';
 import type { ServerConfig } from '../types/index.js';
 
-export type SourceInstallStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'deleting' | 'deinstalled';
+export type DeployBuildStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'deleting' | 'deinstalled';
 
-export interface SourceInstallStep {
+export interface DeployBuildStep {
   id: string;
   title: string;
   command: string;
@@ -19,7 +19,7 @@ export interface SourceInstallStep {
   background?: boolean;
 }
 
-export interface SourceInstallPlan {
+export interface DeployBuildPlan {
   id: string;
   repositoryUrl: string;
   serverName: string;
@@ -27,17 +27,17 @@ export interface SourceInstallPlan {
   installRoot: string;
   installDir: string;
   engine: 'node' | 'python' | 'docker' | 'unknown';
-  steps: SourceInstallStep[];
+  steps: DeployBuildStep[];
   prerequisites: string[];
   selectedPort?: number;
 }
 
-export interface SourceInstallJob {
+export interface DeployBuildJob {
   id: string;
   repositoryUrl: string;
   serverName: string;
   version?: string;
-  status: SourceInstallStatus;
+  status: DeployBuildStatus;
   createdAt: string;
   updatedAt: string;
   startedAt?: string;
@@ -45,7 +45,7 @@ export interface SourceInstallJob {
   installRoot: string;
   installDir: string;
   engine: 'node' | 'python' | 'docker' | 'unknown';
-  plan: SourceInstallPlan;
+  plan: DeployBuildPlan;
   processPid?: number;
   logs: string[];
   error?: string;
@@ -58,7 +58,7 @@ interface PreviewInstallInput {
   version?: string;
 }
 
-interface SourceInstallPlanInput {
+interface DeployBuildPlanInput {
   id?: string;
   repositoryUrl?: string;
   serverName?: string;
@@ -66,18 +66,18 @@ interface SourceInstallPlanInput {
   installRoot?: string;
   installDir?: string;
   engine?: 'node' | 'python' | 'docker' | 'unknown';
-  steps?: SourceInstallStep[];
+  steps?: DeployBuildStep[];
   prerequisites?: string[];
   selectedPort?: number;
 }
 
-interface SourceInstallRequest extends PreviewInstallInput {
-  plan?: SourceInstallPlanInput;
+interface DeployBuildRequest extends PreviewInstallInput {
+  plan?: DeployBuildPlanInput;
 }
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
-const JOBS_FILE = path.join(DATA_DIR, 'source-install-jobs.json');
-const INSTALL_ROOT = path.resolve(process.cwd(), 'data', 'source-installs');
+const JOBS_FILE = path.join(DATA_DIR, 'deploy-build-jobs.json');
+const INSTALL_ROOT = path.resolve(process.cwd(), 'data', 'deploy-builds');
 const MAX_LOG_LINES = 200;
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 const SUSPECT_COMMAND_PATTERN = /(?:^|\s)(?:sudo|su|sh|bash|zsh|fish|cmd|powershell|pwsh|eval|exec|source|\.)(?:$|\s)/i;
@@ -95,18 +95,18 @@ const ensureStorage = async (): Promise<void> => {
   }
 };
 
-const readJobs = async (): Promise<SourceInstallJob[]> => {
+const readJobs = async (): Promise<DeployBuildJob[]> => {
   await ensureStorage();
   const raw = await fs.readFile(JOBS_FILE, 'utf8');
-  return JSON.parse(raw) as SourceInstallJob[];
+  return JSON.parse(raw) as DeployBuildJob[];
 };
 
-const writeJobs = async (jobs: SourceInstallJob[]): Promise<void> => {
+const writeJobs = async (jobs: DeployBuildJob[]): Promise<void> => {
   await ensureStorage();
   await fs.writeFile(JOBS_FILE, JSON.stringify(jobs, null, 2), 'utf8');
 };
 
-const addLogLine = (job: SourceInstallJob, line: string): SourceInstallJob => {
+const addLogLine = (job: DeployBuildJob, line: string): DeployBuildJob => {
   const logs = [...job.logs];
   if (logs.length >= MAX_LOG_LINES) {
     logs.shift();
@@ -295,7 +295,7 @@ const analyzeRepository = async (repositoryUrl: string, serverName: string): Pro
   return { engine: 'unknown', prerequisites: ['git'] };
 };
 
-const generatePlan = async (input: SourceInstallRequest): Promise<SourceInstallPlan> => {
+const generatePlan = async (input: DeployBuildRequest): Promise<DeployBuildPlan> => {
   const { repositoryUrl, serverName: inputServerName, version } = input;
   if (!repositoryUrl) {
     throw new Error('Repository URL is required');
@@ -305,7 +305,7 @@ const generatePlan = async (input: SourceInstallRequest): Promise<SourceInstallP
   const installDir = input.plan?.installDir ?? path.join(INSTALL_ROOT, serverName);
   const { engine, prerequisites } = await analyzeRepository(repositoryUrl, serverName);
 
-  const baseSteps: SourceInstallStep[] = [
+  const baseSteps: DeployBuildStep[] = [
     {
       id: 'clone',
       title: 'Clone repository',
@@ -391,7 +391,7 @@ const generatePlan = async (input: SourceInstallRequest): Promise<SourceInstallP
   };
 };
 
-const generateServerConfigFromJob = (job: SourceInstallJob): ServerConfig => {
+const generateServerConfigFromJob = (job: DeployBuildJob): ServerConfig => {
   const config: ServerConfig = {
     type: job.engine === 'docker' ? 'sse' : 'stdio',
     description: `Source-installed from ${job.repositoryUrl}${job.version ? ` (${job.version})` : ''}`,
@@ -417,13 +417,13 @@ const generateServerConfigFromJob = (job: SourceInstallJob): ServerConfig => {
   return config;
 };
 
-export const previewSourceInstall = async (input: SourceInstallRequest): Promise<SourceInstallPlan> => {
+export const previewDeployBuild = async (input: DeployBuildRequest): Promise<DeployBuildPlan> => {
   return generatePlan(input);
 };
 
-export const createSourceInstallJob = async (input: SourceInstallRequest): Promise<SourceInstallJob> => {
+export const createDeployBuildJob = async (input: DeployBuildRequest): Promise<DeployBuildJob> => {
   const plan = await generatePlan(input);
-  const job: SourceInstallJob = {
+  const job: DeployBuildJob = {
     id: `job-${randomUUID()}`,
     repositoryUrl: plan.repositoryUrl,
     serverName: plan.serverName,
@@ -443,23 +443,23 @@ export const createSourceInstallJob = async (input: SourceInstallRequest): Promi
   return job;
 };
 
-export const getSourceInstallJobs = async (): Promise<SourceInstallJob[]> => {
+export const getDeployBuildJobs = async (): Promise<DeployBuildJob[]> => {
   return readJobs();
 };
 
-export const getSourceInstallJob = async (jobId: string): Promise<SourceInstallJob | null> => {
+export const getDeployBuildJob = async (jobId: string): Promise<DeployBuildJob | null> => {
   const jobs = await readJobs();
   return jobs.find((job) => job.id === jobId) ?? null;
 };
 
-export const retrySourceInstallJob = async (jobId: string): Promise<SourceInstallJob | null> => {
+export const retryDeployBuildJob = async (jobId: string): Promise<DeployBuildJob | null> => {
   const jobs = await readJobs();
   const job = jobs.find((entry) => entry.id === jobId);
   if (!job) {
     return null;
   }
 
-  const retried: SourceInstallJob = {
+  const retried: DeployBuildJob = {
     ...job,
     status: 'queued',
     updatedAt: new Date().toISOString(),
@@ -497,14 +497,14 @@ export const registerServerFromInstall = async (jobId: string): Promise<boolean>
   return false;
 };
 
-export const deinstallSourceInstallJob = async (jobId: string): Promise<SourceInstallJob | null> => {
+export const deinstallDeployBuildJob = async (jobId: string): Promise<DeployBuildJob | null> => {
   const jobs = await readJobs();
   const job = jobs.find((entry) => entry.id === jobId);
   if (!job) {
     return null;
   }
 
-  const nextJob: SourceInstallJob = {
+  const nextJob: DeployBuildJob = {
     ...job,
     status: 'deleting',
     updatedAt: new Date().toISOString(),
@@ -538,7 +538,7 @@ export const deinstallSourceInstallJob = async (jobId: string): Promise<SourceIn
     }
 
     await fs.rm(nextJob.installDir, { recursive: true, force: true });
-    const finalizedJob: SourceInstallJob = {
+    const finalizedJob: DeployBuildJob = {
       ...nextJob,
       status: 'deinstalled',
       updatedAt: new Date().toISOString(),
@@ -549,7 +549,7 @@ export const deinstallSourceInstallJob = async (jobId: string): Promise<SourceIn
     await writeJobs(finalJobs);
     return finalizedJob;
   } catch (error) {
-    const failedJob: SourceInstallJob = {
+    const failedJob: DeployBuildJob = {
       ...nextJob,
       status: 'failed',
       updatedAt: new Date().toISOString(),
@@ -562,21 +562,21 @@ export const deinstallSourceInstallJob = async (jobId: string): Promise<SourceIn
   }
 };
 
-export const executeSourceInstallJob = async (jobId: string): Promise<void> => {
+export const executeDeployBuildJob = async (jobId: string): Promise<void> => {
   const jobs = await readJobs();
   const job = jobs.find((entry) => entry.id === jobId);
   if (!job) {
     return;
   }
 
-  const persist = async (nextJob: SourceInstallJob): Promise<void> => {
+  const persist = async (nextJob: DeployBuildJob): Promise<void> => {
     const nextJobs = jobs.map((entry) => (entry.id === jobId ? nextJob : entry));
     await writeJobs(nextJobs);
   };
 
-  let currentJob: SourceInstallJob = {
+  let currentJob: DeployBuildJob = {
     ...job,
-    status: 'running' as SourceInstallStatus,
+    status: 'running' as DeployBuildStatus,
     updatedAt: new Date().toISOString(),
     startedAt: new Date().toISOString(),
   };

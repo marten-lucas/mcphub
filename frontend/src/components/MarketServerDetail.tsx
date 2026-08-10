@@ -14,6 +14,7 @@ interface MarketServerDetailProps {
   server: MarketServer;
   onBack: () => void;
   onInstall: (server: MarketServer, config: ServerConfig) => void;
+  onDeploy?: (server: MarketServer) => void;
   installing?: boolean;
   isInstalled?: boolean;
   onDelete?: (serverName: string) => void;
@@ -28,6 +29,7 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
   server,
   onBack,
   onInstall,
+  onDeploy,
   installing = false,
   isInstalled = false,
   onDelete,
@@ -254,6 +256,10 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
     }
   };
 
+  const handleDeploy = () => {
+    onDeploy?.(server);
+  };
+
   const handleDeleteConfirm = async () => {
     if (!isCustomServer) return;
 
@@ -397,6 +403,14 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
               {t('market.custom', { defaultValue: 'Custom' })}
             </span>
           ) : null}
+          {isCustomServer && onDeploy && (
+            <button
+              onClick={handleDeploy}
+              className="hub-btn ghost mr-2"
+            >
+              Deploy
+            </button>
+          )}
           <button
             onClick={handleInstall}
             disabled={buttonProps.disabled}
