@@ -48,6 +48,27 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
       .map((tag) => tag.trim())
       .filter(Boolean);
 
+  const deriveServerNameFromRepositoryUrl = (value: string): string => {
+    try {
+      const parsedUrl = new URL(value);
+      const pathSegments = parsedUrl.pathname.split('/').filter(Boolean);
+      const repoSegment = pathSegments[pathSegments.length - 1]?.replace(/\.(git|zip|tar)$/i, '') || '';
+
+      if (!repoSegment) {
+        return '';
+      }
+
+      return repoSegment
+        .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+        .replace(/[_\s]+/g, '-')
+        .replace(/[^a-zA-Z0-9._-]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .toLowerCase();
+    } catch {
+      return '';
+    }
+  };
+
   const deriveTagsFromRepositoryUrl = (value: string): string[] => {
     try {
       const parsedUrl = new URL(value);
@@ -161,9 +182,16 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
 
   const handleRepositoryUrlChange = (value: string) => {
     setRepositoryUrl(value);
+
     if (!value.trim()) {
+      setServerName('');
       setTagsInput('');
       return;
+    }
+
+    const derivedServerName = deriveServerNameFromRepositoryUrl(value);
+    if (derivedServerName && !serverName.trim()) {
+      setServerName(derivedServerName);
     }
 
     const suggestedTags = deriveTagsFromRepositoryUrl(value);
@@ -179,7 +207,7 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
       <div className="bg-white rounded-lg shadow-lg w-full max-w-md mx-4">
         <div className="flex justify-between items-center p-6 border-b">
           <h2 className="text-xl font-bold">
-            {mode === 'edit' ? 'Edit Custom Repository' : 'Add Custom Repository'}
+            {mode === 'edit' ? 'Edit custom repo' : 'Add to market'}
           </h2>
           <button
             onClick={() => {
@@ -286,7 +314,7 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
               className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
               disabled={loading}
             >
-              {loading ? (mode === 'edit' ? 'Updating...' : 'Registering...') : mode === 'edit' ? 'Save' : 'Register'}
+              {loading ? (mode === 'edit' ? 'Updating...' : 'Adding...') : mode === 'edit' ? 'Save' : 'Add to market'}
             </button>
           </div>
         </form>

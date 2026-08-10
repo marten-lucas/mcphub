@@ -21,6 +21,7 @@ import CloudServerDetail from '@/components/CloudServerDetail';
 import RegistryServerCard from '@/components/RegistryServerCard';
 import RegistryServerDetail from '@/components/RegistryServerDetail';
 import MCPRouterApiKeyError from '@/components/MCPRouterApiKeyError';
+import AddCustomRepoModal from '@/components/AddCustomRepoModal';
 import Pagination from '@/components/ui/Pagination';
 import CursorPagination from '@/components/ui/CursorPagination';
 
@@ -114,6 +115,8 @@ const MarketPage: React.FC = () => {
   const [sourceInstallConfirmPlan, setSourceInstallConfirmPlan] = useState<any>(null);
   const [installedCloudServers, setInstalledCloudServers] = useState<Set<string>>(new Set());
   const [installedRegistryServers, setInstalledRegistryServers] = useState<Set<string>>(new Set());
+  const [addCustomRepoModalOpen, setAddCustomRepoModalOpen] = useState(false);
+  const [editingCustomServer, setEditingCustomServer] = useState<MarketServer | null>(null);
 
   useEffect(() => {
     const loadServerDetails = async () => {
@@ -256,6 +259,38 @@ const MarketPage: React.FC = () => {
     setSourceInstallConfirmPlan(null);
     setSourceInstallOpen(true);
   };
+
+  const handleOpenAddCustomRepoModal = useCallback(() => {
+    setSourceInstallOpen(false);
+    setSourceInstallConfirmOpen(false);
+    setSourceInstallConfirmPlan(null);
+    setEditingCustomServer(null);
+    setAddCustomRepoModalOpen(true);
+  }, []);
+
+  const handleEditCustomRepo = useCallback((server: MarketServer) => {
+    setSourceInstallOpen(false);
+    setSourceInstallConfirmOpen(false);
+    setSourceInstallConfirmPlan(null);
+    setEditingCustomServer(server);
+    setAddCustomRepoModalOpen(true);
+  }, []);
+
+  const handleCloseAddCustomRepoModal = useCallback(() => {
+    setAddCustomRepoModalOpen(false);
+    setEditingCustomServer(null);
+  }, []);
+
+  const handleCustomRepoModalSuccess = useCallback(
+    (serverName: string, _mode: 'add' | 'edit') => {
+      handleCloseAddCustomRepoModal();
+      if (currentTab === 'local') {
+        void filterLocalByCategory(selectedLocalCategory || '');
+        navigate(`/market/${encodeURIComponent(serverName)}?tab=local`);
+      }
+    },
+    [currentTab, filterLocalByCategory, handleCloseAddCustomRepoModal, navigate, selectedLocalCategory],
+  );
 
   const handleSourceInstallRepoChange = (value: string) => {
     setSourceInstallRepo(value);
@@ -554,6 +589,16 @@ const MarketPage: React.FC = () => {
         onInstall={handleLocalInstall}
         installing={installing}
         isInstalled={isServerInstalled(selectedServer.name)}
+        onDelete={(serverName) => {
+          setSelectedServer(null);
+          setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            next.set('tab', 'local');
+            return next;
+          });
+          void fetchLocalServerByName(serverName).catch(() => undefined);
+        }}
+        onEdit={handleEditCustomRepo}
       />
     );
   }
@@ -836,6 +881,14 @@ const MarketPage: React.FC = () => {
         </div>
       )}
 
+      <AddCustomRepoModal
+        isOpen={addCustomRepoModalOpen}
+        onClose={handleCloseAddCustomRepoModal}
+        onSuccess={handleCustomRepoModalSuccess}
+        mode={editingCustomServer ? 'edit' : 'add'}
+        initialServer={editingCustomServer}
+      />
+
       {sourceInstallJobs.length > 0 && (
         <div className="hub-card p-4 mb-5">
           <div className="flex items-center justify-between mb-3">
@@ -968,7 +1021,7 @@ const MarketPage: React.FC = () => {
                 </button>
               ))}
               <button
-                onClick={() => openSourceInstallModal()}
+                onClick={handleOpenAddCustomRepoModal}
                 className="w-full mt-3 transition-colors text-[13px] font-medium"
                 style={{
                   padding: '8px 10px',
@@ -979,7 +1032,7 @@ const MarketPage: React.FC = () => {
                   textAlign: 'left',
                 }}
               >
-                + {t('market.addCustomRepo')}
+                + add to market
               </button>
             </div>
           </div>
