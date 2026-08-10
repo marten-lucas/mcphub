@@ -581,6 +581,22 @@ const MarketPage: React.FC = () => {
     else changeCloudServersPerPage(v);
   };
 
+  const orderedCategories = (() => {
+    const categories = (localCategories || []).filter(Boolean);
+    const officialCategories = categories.filter((category) => category.toLowerCase() !== 'custom');
+    const customCategories = categories.filter((category) => category.toLowerCase() === 'custom');
+    const ordered = [...officialCategories];
+
+    if (customCategories.length > 0) {
+      if (officialCategories.length > 0) {
+        ordered.push('separator');
+      }
+      ordered.push(...customCategories);
+    }
+
+    return ordered;
+  })();
+
   if (selectedServer) {
     return (
       <MarketServerDetail
@@ -1003,23 +1019,31 @@ const MarketPage: React.FC = () => {
                   {allLocalServers.length}
                 </span>
               </button>
-              {categories.map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => handleCategoryClick(cat)}
-                  className="flex items-center justify-between transition-colors text-[13px]"
-                  style={{
-                    padding: '6px 10px',
-                    borderRadius: 6,
-                    background: selectedCategory === cat ? 'var(--hub-surface)' : 'transparent',
-                    color: selectedCategory === cat ? 'var(--hub-ink)' : 'var(--hub-ink-2)',
-                    border:
-                      '1px solid ' + (selectedCategory === cat ? 'var(--hub-line)' : 'transparent'),
-                  }}
-                >
-                  <span className="truncate">{cat}</span>
-                </button>
-              ))}
+              {orderedCategories.map((cat) => {
+                if (cat === 'separator') {
+                  return (
+                    <div key="custom-separator" className="my-2 border-t border-[var(--hub-line)]" />
+                  );
+                }
+
+                return (
+                  <button
+                    key={cat}
+                    onClick={() => handleCategoryClick(cat)}
+                    className="flex items-center justify-between transition-colors text-[13px]"
+                    style={{
+                      padding: '6px 10px',
+                      borderRadius: 6,
+                      background: selectedCategory === cat ? 'var(--hub-surface)' : 'transparent',
+                      color: selectedCategory === cat ? 'var(--hub-ink)' : 'var(--hub-ink-2)',
+                      border:
+                        '1px solid ' + (selectedCategory === cat ? 'var(--hub-line)' : 'transparent'),
+                    }}
+                  >
+                    <span className="truncate">{cat}</span>
+                  </button>
+                );
+              })}
               <button
                 onClick={handleOpenAddCustomRepoModal}
                 className="w-full mt-3 transition-colors text-[13px] font-medium"

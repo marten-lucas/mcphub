@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useToast } from '@/contexts/ToastContext';
 import { MarketServer, MarketServerInstallation } from '@/types';
 import ServerForm from './ServerForm';
@@ -41,7 +43,9 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
   const [readmeLoading, setReadmeLoading] = useState(false);
   const [readmeError, setReadmeError] = useState<string | null>(null);
 
-  const isCustomServer = server.categories?.includes('Custom') || server.tags?.includes('Custom');
+  const isCustomServer =
+    (server.categories || []).some((category) => category?.toLowerCase() === 'custom') ||
+    (server.tags || []).some((tag) => tag?.toLowerCase() === 'custom');
 
   const parseGitHubRepository = (repositoryUrl: string) => {
     try {
@@ -397,41 +401,6 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
       <p className="text-gray-700 mb-6">{server.description}</p>
 
       <div className="mb-6">
-        <h3 className="text-lg font-semibold mb-3">
-          {t('market.categories')} & {t('market.tags')}
-        </h3>
-        <div className="flex flex-wrap gap-2">
-          {orderedCategories.map((category, index) => {
-            if (category === 'separator') {
-              return (
-                <span key={`sep-${index}`} className="text-sm text-gray-400">
-                  •
-                </span>
-              );
-            }
-
-            return (
-              <span
-                key={`cat-${index}`}
-                className="bg-gray-100 dark:bg-gray-800 text-gray-800 px-3 py-1 rounded"
-              >
-                {category}
-              </span>
-            );
-          })}
-          {server.tags &&
-            server.tags.map((tag, index) => (
-              <span
-                key={`tag-${index}`}
-                className="bg-gray-100 dark:bg-gray-800 text-green-700 px-2 py-1 rounded text-sm"
-              >
-                #{tag}
-              </span>
-            ))}
-        </div>
-      </div>
-
-      <div className="mb-6">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-semibold">README</h3>
           {githubMeta && (
@@ -450,8 +419,10 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
             Loading README from GitHub...
           </div>
         ) : readmeContent ? (
-          <div className="max-h-[60vh] overflow-auto rounded border border-gray-200 bg-gray-50 p-4 text-sm leading-7 text-gray-700 whitespace-pre-wrap">
-            {readmeContent}
+          <div className="max-h-[60vh] overflow-auto rounded border border-gray-200 bg-gray-50 p-4 text-sm leading-7 text-gray-700">
+            <div className="prose prose-slate max-w-none" style={{ overflowWrap: 'anywhere' }}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{readmeContent}</ReactMarkdown>
+            </div>
           </div>
         ) : (
           <div className="rounded border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
