@@ -191,10 +191,63 @@ const MarketPage: React.FC = () => {
 
   const handleBackToList = () => navigate(`/market?tab=${currentTab}`);
 
+  const deriveSourceInstallDefaults = (repoUrl: string) => {
+    const trimmed = repoUrl.trim();
+    if (!trimmed) {
+      return { serverName: '', version: '' };
+    }
+
+    const normalizedUrl = trimmed.replace(/^git@/, '').replace(/^ssh:\/\//, 'https://');
+    const explicitRefMatch = trimmed.match(/[?&]ref=([^&#]+)/i);
+    const pathRefMatch = trimmed.match(/\/(?:tree|blob|releases\/tag|archive\/refs\/tags|archive)\/([^/?#]+)/i);
+    const versionFromUrl = explicitRefMatch?.[1] || pathRefMatch?.[1] || '';
+
+    let host = '';
+    let path = '';
+
+    try {
+      const parsedUrl = new URL(normalizedUrl);
+      host = parsedUrl.hostname.toLowerCase();
+      path = parsedUrl.pathname.replace(/\/+$/, '');
+    } catch {
+      const scpLikeMatch = trimmed.match(/^(?:[^@]+@)?([^:]+):([^/]+)\/([^/]+?)(?:\.git)?(?:\/)?$/i);
+      if (scpLikeMatch) {
+        host = scpLikeMatch[1].toLowerCase();
+        path = `/${scpLikeMatch[2]}/${scpLikeMatch[3]}`;
+      }
+    }
+
+    if (!host || !path) {
+      return { serverName: '', version: '' };
+    }
+
+    const segments = path.split('/').filter(Boolean);
+    if (segments.length < 2) {
+      return { serverName: '', version: '' };
+    }
+
+    const repoSlug = segments[1].replace(/\.git$/i, '');
+    const serverName = repoSlug
+      .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+      .replace(/[_\s]+/g, '-')
+      .replace(/[^a-zA-Z0-9._-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .toLowerCase();
+
+    return {
+      serverName,
+      version: decodeURIComponent(versionFromUrl).replace(/^refs\/heads\//i, '').replace(/^refs\/tags\//i, ''),
+    };
+  };
+
   const openSourceInstallModal = (repo = '', name = '', version = '') => {
+    const derivedDefaults = deriveSourceInstallDefaults(repo);
+    const resolvedName = name || derivedDefaults.serverName;
+    const resolvedVersion = version || derivedDefaults.version;
+
     setSourceInstallRepo(repo);
-    setSourceInstallName(name);
-    setSourceInstallVersion(version);
+    setSourceInstallName(resolvedName);
+    setSourceInstallVersion(resolvedVersion);
     setSourceInstallPreview(null);
     setSourceInstallPlanDraft(null);
     setSourceInstallPlanDraftJson('');
@@ -202,6 +255,20 @@ const MarketPage: React.FC = () => {
     setSourceInstallConfirmOpen(false);
     setSourceInstallConfirmPlan(null);
     setSourceInstallOpen(true);
+  };
+
+  const handleSourceInstallRepoChange = (value: string) => {
+    setSourceInstallRepo(value);
+
+    if (!value.trim()) {
+      setSourceInstallName('');
+      setSourceInstallVersion('');
+      return;
+    }
+
+    const derivedDefaults = deriveSourceInstallDefaults(value);
+    setSourceInstallName((prev) => (prev.trim() ? prev : derivedDefaults.serverName));
+    setSourceInstallVersion((prev) => (prev.trim() ? prev : derivedDefaults.version));
   };
 
   const handleLocalInstall = async (server: MarketServer, config: ServerConfig) => {
@@ -652,7 +719,7 @@ const MarketPage: React.FC = () => {
                 <input
                   className="hub-input mt-1 w-full"
                   value={sourceInstallRepo}
-                  onChange={(e) => setSourceInstallRepo(e.target.value)}
+                  onChange={(e) => handleSourceInstallRepoChange(e.target.value)}
                   placeholder="https://github.com/owner/repo"
                   required
                 />
