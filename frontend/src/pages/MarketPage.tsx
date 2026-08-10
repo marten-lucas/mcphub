@@ -578,6 +578,47 @@ const MarketPage: React.FC = () => {
     errorMessage === 'MCPROUTER_API_KEY_NOT_CONFIGURED' ||
     errorMessage.toLowerCase().includes('mcprouter api key not configured');
 
+  const sharedOverlays = (
+    <>
+      <DeployWizardSidepane
+        open={deployBuildOpen}
+        repositoryUrl={deployBuildRepo}
+        serverName={deployBuildName}
+        version={deployBuildVersion}
+        preview={deployBuildPreview}
+        planDraftJson={deployBuildPlanDraftJson}
+        submitting={deployBuildSubmitting}
+        confirmOpen={deployBuildConfirmOpen}
+        confirmPlan={deployBuildConfirmPlan}
+        jobs={deployBuildJobs}
+        selectedJob={deployBuildSelectedJob}
+        selectedJobId={deployBuildSelectedJobId}
+        onClose={resetDeployBuildModal}
+        onRepositoryChange={handleDeployBuildRepoChange}
+        onServerNameChange={setDeployBuildName}
+        onVersionChange={setDeployBuildVersion}
+        onPlanDraftJsonChange={setDeployBuildPlanDraftJson}
+        onSubmit={handleDeployBuildSubmit}
+        onConfirm={handleDeployBuildConfirm}
+        onCancelConfirm={() => {
+          setDeployBuildConfirmOpen(false);
+          setDeployBuildConfirmPlan(null);
+        }}
+        onOpenJob={(jobId) => void handleOpenDeployBuildJob(jobId)}
+        onRetryJob={(jobId) => void handleRetryDeployBuildJob(jobId)}
+        onDeinstallJob={(jobId) => void handleDeinstallDeployBuildJob(jobId)}
+      />
+
+      <AddCustomRepoModal
+        isOpen={addCustomRepoModalOpen}
+        onClose={handleCloseAddCustomRepoModal}
+        onSuccess={handleCustomRepoModalSuccess}
+        mode={editingCustomServer ? 'edit' : 'add'}
+        initialServer={editingCustomServer}
+      />
+    </>
+  );
+
   const handlePageChange = (page: number) => {
     if (currentTab === 'local') changeLocalPage(page);
     else if (currentTab === 'registry') changeRegistryPage(page);
@@ -726,47 +767,6 @@ const MarketPage: React.FC = () => {
     : isRegistryTab
       ? registryServersPerPage
       : cloudServersPerPage;
-
-  const sharedOverlays = (
-    <>
-      <DeployWizardSidepane
-        open={deployBuildOpen}
-        repositoryUrl={deployBuildRepo}
-        serverName={deployBuildName}
-        version={deployBuildVersion}
-        preview={deployBuildPreview}
-        planDraftJson={deployBuildPlanDraftJson}
-        submitting={deployBuildSubmitting}
-        confirmOpen={deployBuildConfirmOpen}
-        confirmPlan={deployBuildConfirmPlan}
-        jobs={deployBuildJobs}
-        selectedJob={deployBuildSelectedJob}
-        selectedJobId={deployBuildSelectedJobId}
-        onClose={resetDeployBuildModal}
-        onRepositoryChange={handleDeployBuildRepoChange}
-        onServerNameChange={setDeployBuildName}
-        onVersionChange={setDeployBuildVersion}
-        onPlanDraftJsonChange={setDeployBuildPlanDraftJson}
-        onSubmit={handleDeployBuildSubmit}
-        onConfirm={handleDeployBuildConfirm}
-        onCancelConfirm={() => {
-          setDeployBuildConfirmOpen(false);
-          setDeployBuildConfirmPlan(null);
-        }}
-        onOpenJob={(jobId) => void handleOpenDeployBuildJob(jobId)}
-        onRetryJob={(jobId) => void handleRetryDeployBuildJob(jobId)}
-        onDeinstallJob={(jobId) => void handleDeinstallDeployBuildJob(jobId)}
-      />
-
-      <AddCustomRepoModal
-        isOpen={addCustomRepoModalOpen}
-        onClose={handleCloseAddCustomRepoModal}
-        onSuccess={handleCustomRepoModalSuccess}
-        mode={editingCustomServer ? 'edit' : 'add'}
-        initialServer={editingCustomServer}
-      />
-    </>
-  );
 
   return (
     <div>
