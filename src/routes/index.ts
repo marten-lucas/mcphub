@@ -59,6 +59,14 @@ import {
   getMarketServersByTag,
 } from '../controllers/marketController.js';
 import {
+  createSourceInstallHandler,
+  deinstallSourceInstallHandler,
+  getSourceInstallJobHandler,
+  listSourceInstallJobsHandler,
+  previewSourceInstallHandler,
+  retrySourceInstallHandler,
+} from '../controllers/sourceInstallController.js';
+import {
   getAllCloudServers,
   getCloudServer,
   getAllCloudCategories,
@@ -370,6 +378,12 @@ export const initRoutes = async (app: express.Application): Promise<void> => {
   authenticatedRouter.get('/market/categories/:category', getMarketServersByCategory);
   authenticatedRouter.get('/market/tags', getAllMarketTags);
   authenticatedRouter.get('/market/tags/:tag', getMarketServersByTag);
+  authenticatedRouter.post('/market/source-install/preview', previewSourceInstallHandler);
+  authenticatedRouter.post('/market/source-install', createSourceInstallHandler);
+  authenticatedRouter.get('/market/source-install/jobs', listSourceInstallJobsHandler);
+  authenticatedRouter.get('/market/source-install/jobs/:jobId', getSourceInstallJobHandler);
+  authenticatedRouter.post('/market/source-install/jobs/:jobId/retry', retrySourceInstallHandler);
+  authenticatedRouter.post('/market/source-install/jobs/:jobId/deinstall', deinstallSourceInstallHandler);
 
   // Cloud Market routes
   authenticatedRouter.get('/cloud/servers', getAllCloudServers);

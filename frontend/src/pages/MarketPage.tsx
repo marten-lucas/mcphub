@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Search, AlertCircle, X, ChevronDown } from 'lucide-react';
@@ -13,7 +13,7 @@ import { useMarketData } from '@/hooks/useMarketData';
 import { useCloudData } from '@/hooks/useCloudData';
 import { useRegistryData } from '@/hooks/useRegistryData';
 import { useToast } from '@/contexts/ToastContext';
-import { apiPost } from '@/utils/fetchInterceptor';
+import { apiGet, apiPost } from '@/utils/fetchInterceptor';
 import MarketServerCard from '@/components/MarketServerCard';
 import MarketServerDetail from '@/components/MarketServerDetail';
 import CloudServerCard from '@/components/CloudServerCard';
@@ -99,6 +99,17 @@ const MarketPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [registrySearchQuery, setRegistrySearchQuery] = useState('');
   const [installing, setInstalling] = useState(false);
+  const [sourceInstallOpen, setSourceInstallOpen] = useState(false);
+  const [sourceInstallRepo, setSourceInstallRepo] = useState('');
+  const [sourceInstallName, setSourceInstallName] = useState('');
+  const [sourceInstallVersion, setSourceInstallVersion] = useState('');
+  const [sourceInstallPreview, setSourceInstallPreview] = useState<any>(null);
+  const [sourceInstallPlanDraft, setSourceInstallPlanDraft] = useState<any>(null);
+  const [sourceInstallPlanDraftJson, setSourceInstallPlanDraftJson] = useState('');
+  const [sourceInstallSubmitting, setSourceInstallSubmitting] = useState(false);
+  const [sourceInstallJobs, setSourceInstallJobs] = useState<any[]>([]);
+  const [sourceInstallSelectedJobId, setSourceInstallSelectedJobId] = useState<string | null>(null);
+  const [sourceInstallSelectedJob, setSourceInstallSelectedJob] = useState<any>(null);
   const [installedCloudServers, setInstalledCloudServers] = useState<Set<string>>(new Set());
   const [installedRegistryServers, setInstalledRegistryServers] = useState<Set<string>>(new Set());
 
@@ -211,6 +222,142 @@ const MarketPage: React.FC = () => {
     }
   };
 
+  const loadSourceInstallJobs = useCallback(async () => {
+    try {
+      const result = await apiGet('/market/source-install/jobs');
+      if (result.success && Array.isArray(result.data)) {
+        setSourceInstallJobs(result.data);
+        if (sourceInstallSelectedJobId) {
+          const selected = result.data.find((job: any) => job.id === sourceInstallSelectedJobId);
+          if (selected) {
+            setSourceInstallSelectedJob(selected);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load source install jobs', error);
+    }
+  }, [sourceInstallSelectedJobId]);
+
+  useEffect(() => {
+    void loadSourceInstallJobs();
+
+    const intervalId = window.setInterval(() => {
+      void loadSourceInstallJobs();
+    }, 5000);
+
+    return () => window.clearInterval(intervalId);
+  }, [loadSourceInstallJobs]);
+
+  const handleOpenSourceInstallJob = async (jobId: string) => {
+    try {
+      const result = await apiGet(`/market/source-install/jobs/${jobId}`);
+      if (result.success) {
+        setSourceInstallSelectedJobId(jobId);
+        setSourceInstallSelectedJob(result.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch source install job', error);
+    }
+  };
+
+  const handleRetrySourceInstallJob = async (jobId: string) => {
+    try {
+      const result = await apiPost(`/market/source-install/jobs/${jobId}/retry`);
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to retry installation');
+      }
+      showToast('Retry started.', 'success');
+      await handleOpenSourceInstallJob(result.data.id);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Failed to retry installation', 'error');
+    }
+  };
+
+  const handleDeinstallSourceInstallJob = async (jobId: string) => {
+    try {
+      const result = await apiPost(`/market/source-install/jobs/${jobId}/deinstall`);
+      if (!result.success) {
+        throw new Error(result.message || 'Failed to deinstall installation');
+      }
+      showToast('Deinstallation started.', 'success');
+      await handleOpenSourceInstallJob(result.data.id);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Failed to deinstall installation', 'error');
+    }
+  };
+
+  const resetSourceInstallModal = useCallback(() => {
+    setSourceInstallOpen(false);
+    setSourceInstallRepo('');
+    setSourceInstallName('');
+    setSourceInstallVersion('');
+    setSourceInstallPreview(null);
+    setSourceInstallPlanDraft(null);
+    setSourceInstallPlanDraftJson('');
+  }, []);
+
+  const handleSourceInstallSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sourceInstallRepo.trim()) {
+      showToast('Repository URL is required.', 'error');
+      return;
+    }
+
+    try {
+      setSourceInstallSubmitting(true);
+
+      let planDraft = null as any;
+      if (sourceInstallPlanDraftJson.trim()) {
+        try {
+          planDraft = JSON.parse(sourceInstallPlanDraftJson);
+        } catch {
+          throw new Error('Plan JSON is invalid. Fix the JSON before starting the install.');
+        }
+      }
+
+      if (planDraft && !Array.isArray(planDraft.steps)) {
+        throw new Error('Plan JSON must include a steps array.');
+      }
+
+      const previewResult = await apiPost('/market/source-install/preview', {
+        repositoryUrl: sourceInstallRepo.trim(),
+        serverName: sourceInstallName.trim() || undefined,
+        version: sourceInstallVersion.trim() || undefined,
+        plan: planDraft ?? undefined,
+      });
+
+      if (!previewResult.success) {
+        throw new Error(previewResult.message || 'Failed to preview installation plan');
+      }
+
+      const nextPlan = planDraft ?? previewResult.data;
+      setSourceInstallPreview(previewResult.data);
+      setSourceInstallPlanDraft(nextPlan);
+      setSourceInstallPlanDraftJson(JSON.stringify(nextPlan, null, 2));
+
+      const installResult = await apiPost('/market/source-install', {
+        repositoryUrl: sourceInstallRepo.trim(),
+        serverName: sourceInstallName.trim() || undefined,
+        version: sourceInstallVersion.trim() || undefined,
+        plan: nextPlan,
+      });
+
+      if (!installResult.success) {
+        throw new Error(installResult.message || 'Failed to start installation');
+      }
+
+      setSourceInstallSelectedJobId(installResult.data?.id ?? null);
+      setSourceInstallSelectedJob(installResult.data ?? null);
+      showToast(`Source install started for ${previewResult.data.serverName}.`, 'success');
+      resetSourceInstallModal();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Failed to start source install', 'error');
+    } finally {
+      setSourceInstallSubmitting(false);
+    }
+  };
+
   const handleRegistryInstall = async (server: RegistryServerData, config: ServerConfig) => {
     try {
       setInstalling(true);
@@ -307,6 +454,17 @@ const MarketPage: React.FC = () => {
     );
   }
 
+  const tabs: { id: 'cloud' | 'local' | 'registry'; label: string; sourceLabel: string; sourceUrl: string }[] = [
+    { id: 'cloud', label: t('cloud.title'), sourceLabel: 'MCPRouter', sourceUrl: 'https://mcprouter.co' },
+    { id: 'local', label: t('market.title'), sourceLabel: 'MCPM', sourceUrl: 'https://mcpm.sh' },
+    {
+      id: 'registry',
+      label: t('registry.title'),
+      sourceLabel: t('registry.official'),
+      sourceUrl: 'https://registry.modelcontextprotocol.io',
+    },
+  ];
+
   const isLocalTab = currentTab === 'local';
   const isRegistryTab = currentTab === 'registry';
   const servers = isLocalTab ? localServers : isRegistryTab ? registryServers : cloudServers;
@@ -337,17 +495,6 @@ const MarketPage: React.FC = () => {
       ? registryServersPerPage
       : cloudServersPerPage;
 
-  const tabs: { id: 'cloud' | 'local' | 'registry'; label: string; sourceLabel: string; sourceUrl: string }[] = [
-    { id: 'cloud', label: t('cloud.title'), sourceLabel: 'MCPRouter', sourceUrl: 'https://mcprouter.co' },
-    { id: 'local', label: t('market.title'), sourceLabel: 'MCPM', sourceUrl: 'https://mcpm.sh' },
-    {
-      id: 'registry',
-      label: t('registry.title'),
-      sourceLabel: t('registry.official'),
-      sourceUrl: 'https://registry.modelcontextprotocol.io',
-    },
-  ];
-
   return (
     <div>
       {/* Header */}
@@ -358,6 +505,11 @@ const MarketPage: React.FC = () => {
             {tabs.map((tab) => tab.label).join(' · ')}
           </p>
         </div>
+        {isLocalTab && (
+          <button className="hub-btn primary" onClick={() => setSourceInstallOpen(true)}>
+            Install from Git URL
+          </button>
+        )}
       </div>
 
       {/* Tabs */}
@@ -419,6 +571,149 @@ const MarketPage: React.FC = () => {
             </div>
           )}
         </>
+      )}
+
+      {sourceInstallOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <div className="hub-card w-full max-w-xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-semibold">Install from Git URL</h2>
+                <p className="text-sm text-[var(--hub-ink-3)]">
+                  Preview and launch source-based MCP server installs from Git repos.
+                </p>
+              </div>
+              <button className="hub-icon-btn sm" onClick={resetSourceInstallModal}>
+                <X size={13} />
+              </button>
+            </div>
+            <form onSubmit={handleSourceInstallSubmit} className="space-y-4">
+              <label className="block">
+                <span className="text-sm font-medium">Repository URL</span>
+                <input
+                  className="hub-input mt-1 w-full"
+                  value={sourceInstallRepo}
+                  onChange={(e) => setSourceInstallRepo(e.target.value)}
+                  placeholder="https://github.com/owner/repo"
+                  required
+                />
+              </label>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="block">
+                  <span className="text-sm font-medium">Server name</span>
+                  <input
+                    className="hub-input mt-1 w-full"
+                    value={sourceInstallName}
+                    onChange={(e) => setSourceInstallName(e.target.value)}
+                    placeholder="my-mcp-server"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-medium">Version / tag</span>
+                  <input
+                    className="hub-input mt-1 w-full"
+                    value={sourceInstallVersion}
+                    onChange={(e) => setSourceInstallVersion(e.target.value)}
+                    placeholder="main or v1.2.3"
+                  />
+                </label>
+              </div>
+              {sourceInstallPreview && (
+                <div className="rounded border border-[var(--hub-line)] bg-[var(--hub-surface)] p-3">
+                  <div className="text-sm font-semibold mb-2">Install plan</div>
+                  <div className="text-sm text-[var(--hub-ink-3)] mb-2">
+                    Engine: <span className="font-medium text-[var(--hub-ink)]">{sourceInstallPreview.engine}</span>
+                  </div>
+                  <textarea
+                    className="hub-input mt-2 min-h-48 w-full font-mono text-xs"
+                    value={sourceInstallPlanDraftJson}
+                    onChange={(e) => setSourceInstallPlanDraftJson(e.target.value)}
+                    spellCheck={false}
+                  />
+                  <ul className="mt-3 space-y-1 text-sm">
+                    {sourceInstallPreview.steps.map((step: any) => (
+                      <li key={step.id} className="flex items-start gap-2">
+                        <span className="text-[var(--hub-ink-3)]">•</span>
+                        <span>{step.title}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <div className="flex justify-end gap-2">
+                <button type="button" className="hub-btn ghost" onClick={resetSourceInstallModal}>
+                  Cancel
+                </button>
+                <button type="submit" className="hub-btn primary" disabled={sourceInstallSubmitting}>
+                  {sourceInstallSubmitting ? 'Starting…' : 'Preview & install'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {sourceInstallJobs.length > 0 && (
+        <div className="hub-card p-4 mb-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold">Source installs</h3>
+            <span className="text-[11px]" style={{ color: 'var(--hub-ink-3)' }}>
+              Auto-refresh every 5s
+            </span>
+          </div>
+          <div className="space-y-2">
+            {sourceInstallJobs.slice(0, 5).map((job) => (
+              <div
+                key={job.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded border border-[var(--hub-line)] px-3 py-2"
+              >
+                <button
+                  type="button"
+                  className="text-left text-sm font-medium"
+                  onClick={() => void handleOpenSourceInstallJob(job.id)}
+                >
+                  {job.serverName || job.repositoryUrl}
+                </button>
+                <div className="flex items-center gap-2">
+                  <span className="rounded bg-[var(--hub-surface)] px-2 py-1 text-[11px] uppercase tracking-wide">
+                    {job.status}
+                  </span>
+                  {job.status === 'failed' && (
+                    <button
+                      type="button"
+                      className="hub-btn ghost"
+                      onClick={() => void handleRetrySourceInstallJob(job.id)}
+                    >
+                      Retry
+                    </button>
+                  )}
+                  {(job.status === 'succeeded' || job.status === 'failed' || job.status === 'deinstalled') && (
+                    <button
+                      type="button"
+                      className="hub-btn ghost"
+                      onClick={() => void handleDeinstallSourceInstallJob(job.id)}
+                    >
+                      Deinstall
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          {sourceInstallSelectedJob && (
+            <div className="mt-4 rounded border border-[var(--hub-line)] bg-[var(--hub-surface)] p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <div className="text-sm font-semibold">
+                  Logs for {sourceInstallSelectedJob.serverName}
+                </div>
+                <span className="text-[11px] uppercase tracking-wide">{sourceInstallSelectedJob.status}</span>
+              </div>
+              <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-xs">
+                {sourceInstallSelectedJob.logs?.join('\n') || 'No logs yet.'}
+              </pre>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Search bar */}
