@@ -37,7 +37,7 @@ RUN if [ "$INSTALL_EXT" = "true" ]; then \
   apt-get clean && rm -rf /var/lib/apt/lists/*; \
   fi
 
-RUN uv tool install mcp-server-fetch
+RUN uv tool install mcp-server-fetch || echo "Skipping mcp-server-fetch installation"
 
 WORKDIR /app
 
@@ -52,7 +52,11 @@ COPY . .
 # Download the latest servers.json from mcpm.sh and replace the existing file
 RUN curl -s -f --connect-timeout 10 https://mcpm.sh/api/servers.json -o servers.json || echo "Failed to download servers.json, using bundled version"
 
-RUN pnpm build
+RUN if [ -d dist ] && [ -d frontend/dist ]; then \
+  echo "Using prebuilt dist artifacts"; \
+else \
+  pnpm build; \
+fi
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
