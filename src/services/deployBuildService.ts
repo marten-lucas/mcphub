@@ -135,7 +135,8 @@ const assertSafeCommand = (command: string, args?: string[]): void => {
 const ensureInstallDirWithinRoot = async (installDir: string): Promise<void> => {
   const resolvedInstallDir = path.resolve(installDir);
   const resolvedRoot = path.resolve(INSTALL_ROOT);
-  if (!resolvedInstallDir.startsWith(resolvedRoot)) {
+  const relativePath = path.relative(resolvedRoot, resolvedInstallDir);
+  if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
     throw new Error(`Installation directory must be within ${INSTALL_ROOT}`);
   }
 };
