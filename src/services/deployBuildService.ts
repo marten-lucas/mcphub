@@ -302,7 +302,9 @@ const generatePlan = async (input: DeployBuildRequest): Promise<DeployBuildPlan>
   }
 
   const serverName = inputServerName || 'source-server-' + randomUUID().slice(0, 8);
-  const installDir = input.plan?.installDir ?? path.join(INSTALL_ROOT, serverName);
+  const planId = input.plan?.id ?? `plan-${randomUUID()}`;
+  const installDir =
+    input.plan?.installDir ?? path.join(INSTALL_ROOT, `${serverName}-${planId.slice(-8)}`);
   const { engine, prerequisites } = await analyzeRepository(repositoryUrl, serverName);
 
   const baseSteps: DeployBuildStep[] = [
@@ -378,7 +380,7 @@ const generatePlan = async (input: DeployBuildRequest): Promise<DeployBuildPlan>
   const steps = input.plan?.steps?.length ? input.plan.steps.map((step, index) => ({ ...step, id: step.id || `step-${index + 1}` })) : baseSteps;
 
   return {
-    id: input.plan?.id ?? `plan-${randomUUID()}`,
+    id: planId,
     repositoryUrl: input.plan?.repositoryUrl ?? input.repositoryUrl,
     serverName: input.plan?.serverName ?? serverName,
     version: input.plan?.version ?? input.version,
