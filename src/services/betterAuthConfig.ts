@@ -303,7 +303,8 @@ export const resolveBetterAuthRuntimeConfig = (
   const githubEnvConfigured = Boolean(
     process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET,
   );
-  const oidcConfigViaUi = parseBoolean(oidcSettings.configViaUi) ?? false;
+  const oidcConfigViaUi =
+    resolveBooleanSetting(process.env.BETTER_AUTH_OIDC_CONFIG_VIA_UI, oidcSettings.configViaUi, false) ?? false;
   const oidcClientId = oidcConfigViaUi
     ? resolveStringSetting(undefined, oidcSettings.clientId)
     : resolveStringSetting(process.env.OIDC_CLIENT_ID, undefined);

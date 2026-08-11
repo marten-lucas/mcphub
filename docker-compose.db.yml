@@ -39,6 +39,12 @@ services:
       NODE_ENV: production
       JWT_SECRET: ${JWT_SECRET}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      
+      # Authentication - Enable local user login for testing/admin
+      BETTER_AUTH_ENABLED: "true"
+      BETTER_AUTH_ALLOW_LOCAL_USER: "true"
+      BETTER_AUTH_OIDC_ENABLED: "true"
+      BETTER_AUTH_OIDC_CONFIG_VIA_UI: "true"
 
       # Optional: Custom npm registry
       # NPM_REGISTRY: https://registry.npmjs.org/
