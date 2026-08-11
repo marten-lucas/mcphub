@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { AlertTriangle, Rocket, TerminalSquare, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { AlertTriangle, Check, Copy, Rocket, TerminalSquare, X } from 'lucide-react';
 
 type WizardJob = {
   id: string;
@@ -19,6 +19,7 @@ type WizardPlan = {
   prerequisites?: string[];
   steps?: Array<{ id: string; title: string; command?: string; args?: string[] }>;
   selectedPort?: number;
+  installDir?: string;
 };
 
 interface DeployWizardSidepaneProps {
@@ -26,6 +27,7 @@ interface DeployWizardSidepaneProps {
   repositoryUrl: string;
   serverName: string;
   version: string;
+  targetDir: string;
   preview: WizardPlan | null;
   planDraftJson: string;
   submitting: boolean;
@@ -38,6 +40,7 @@ interface DeployWizardSidepaneProps {
   onRepositoryChange: (value: string) => void;
   onServerNameChange: (value: string) => void;
   onVersionChange: (value: string) => void;
+  onTargetDirChange: (value: string) => void;
   onPlanDraftJsonChange: (value: string) => void;
   onSubmit: (e: React.FormEvent) => void;
   onConfirm: () => void;
@@ -52,6 +55,7 @@ const DeployWizardSidepane: React.FC<DeployWizardSidepaneProps> = ({
   repositoryUrl,
   serverName,
   version,
+  targetDir,
   preview,
   planDraftJson,
   submitting,
@@ -64,6 +68,7 @@ const DeployWizardSidepane: React.FC<DeployWizardSidepaneProps> = ({
   onRepositoryChange,
   onServerNameChange,
   onVersionChange,
+  onTargetDirChange,
   onPlanDraftJsonChange,
   onSubmit,
   onConfirm,
@@ -73,6 +78,7 @@ const DeployWizardSidepane: React.FC<DeployWizardSidepaneProps> = ({
   onDeinstallJob,
 }) => {
   const logRef = useRef<HTMLPreElement | null>(null);
+  const [logsCopied, setLogsCopied] = useState(false);
   const consoleLines = selectedJob?.logs?.length ? selectedJob.logs : ['No log output yet.'];
 
   useEffect(() => {
@@ -80,6 +86,33 @@ const DeployWizardSidepane: React.FC<DeployWizardSidepaneProps> = ({
       logRef.current.scrollTop = logRef.current.scrollHeight;
     }
   }, [selectedJob?.logs?.length, selectedJob?.status]);
+
+  useEffect(() => {
+    setLogsCopied(false);
+  }, [selectedJob?.id]);
+
+  const copyLogs = async () => {
+    const text = consoleLines.join('\n');
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const el = document.createElement('textarea');
+        el.value = text;
+        el.style.position = 'fixed';
+        el.style.left = '-9999px';
+        document.body.appendChild(el);
+        el.focus();
+        el.select();
+        document.execCommand('copy');
+        document.body.removeChild(el);
+      }
+      setLogsCopied(true);
+      window.setTimeout(() => setLogsCopied(false), 1200);
+    } catch {
+      setLogsCopied(false);
+    }
+  };
 
   if (!open) return null;
 
@@ -191,6 +224,19 @@ const DeployWizardSidepane: React.FC<DeployWizardSidepaneProps> = ({
               )}
 
               <label className="block">
+                <span className="text-[12px] text-[var(--hub-ink-3)]">Target folder</span>
+                <input
+                  className="hub-input mt-1 w-full font-mono text-xs"
+                  value={targetDir}
+                  onChange={(e) => onTargetDirChange(e.target.value)}
+                  placeholder="/tmp/mcphub-deploy-builds/technitium-mcp-secure"
+                />
+                <p className="mt-1 text-[11px] text-[var(--hub-ink-3)]">
+                  Recommended: /tmp/mcphub-deploy-builds/&lt;repo-name&gt;
+                </p>
+              </label>
+
+              <label className="block">
                 <span className="text-[12px] text-[var(--hub-ink-3)]">Plan override (JSON)</span>
                 <textarea
                   className="hub-input mt-1 min-h-56 w-full font-mono text-xs"
@@ -238,21 +284,26 @@ const DeployWizardSidepane: React.FC<DeployWizardSidepaneProps> = ({
                   {submitting ? 'Deploying…' : 'Deploy'}
                 </button>
               </div>
+              <div className="border-t border-[var(--hub-line)] pt-4">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-[var(--hub-ink)]">Console log</h3>
+                    <TerminalSquare size={14} className="text-[var(--hub-ink-3)]" />
+                  </div>
+                  <button type="button" className="hub-btn ghost sm" onClick={copyLogs}>
+                    {logsCopied ? <Check size={12} /> : <Copy size={12} />}
+                    <span className="ml-1">{logsCopied ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
+                <pre
+                  ref={logRef}
+                  className="max-h-[22rem] overflow-auto whitespace-pre-wrap rounded border border-[var(--hub-line)] bg-[var(--hub-bg-2)] p-3 text-xs leading-5"
+                >
+                  {consoleLines.join('\n')}
+                </pre>
+              </div>
             </section>
           </form>
-
-          <section className="hub-card p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-[var(--hub-ink)]">Console log</h3>
-              <TerminalSquare size={14} className="text-[var(--hub-ink-3)]" />
-            </div>
-            <pre
-              ref={logRef}
-              className="max-h-[26rem] overflow-auto whitespace-pre-wrap rounded border border-[var(--hub-line)] bg-[var(--hub-bg-2)] p-3 text-xs leading-5"
-            >
-              {(selectedJob?.logs?.length ? selectedJob.logs : ['No log output yet.']).join('\n')}
-            </pre>
-          </section>
 
           <section className="hub-card p-4">
             <div className="mb-3 flex items-center justify-between">

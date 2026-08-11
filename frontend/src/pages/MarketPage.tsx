@@ -106,6 +106,8 @@ const MarketPage: React.FC = () => {
   const [deployBuildRepo, setDeployBuildRepo] = useState('');
   const [deployBuildName, setDeployBuildName] = useState('');
   const [deployBuildVersion, setDeployBuildVersion] = useState('');
+  const [deployBuildTargetDir, setDeployBuildTargetDir] = useState('');
+  const [deployBuildTargetDirTouched, setDeployBuildTargetDirTouched] = useState(false);
   const [deployBuildPreview, setDeployBuildPreview] = useState<any>(null);
   const [deployBuildPlanDraftJson, setDeployBuildPlanDraftJson] = useState('');
   const [deployBuildSubmitting, setDeployBuildSubmitting] = useState(false);
@@ -244,6 +246,51 @@ const MarketPage: React.FC = () => {
     };
   };
 
+  const deriveDeployBuildTargetDir = (server: string) => {
+    const normalizedName = server.trim() || 'deployment';
+    return `/tmp/mcphub-deploy-builds/${normalizedName}`;
+  };
+
+  const parentDir = (targetDir: string) => {
+    const normalized = targetDir.replace(/[\\/]+$/, '');
+    const lastSlash = normalized.lastIndexOf('/');
+    return lastSlash > 0 ? normalized.slice(0, lastSlash) : normalized;
+  };
+
+  const applyTargetDirToPlan = (plan: any, targetDir: string) => {
+    const resolvedTargetDir = targetDir.trim();
+    if (!resolvedTargetDir) {
+      return plan;
+    }
+
+    const resolvedInstallDir = resolvedTargetDir.replace(/[\\/]+$/, '');
+    const resolvedInstallRoot = parentDir(resolvedInstallDir);
+
+    return {
+      ...plan,
+      installRoot: resolvedInstallRoot,
+      installDir: resolvedInstallDir,
+      steps: Array.isArray(plan.steps)
+        ? plan.steps.map((step: any) => {
+            if (!step || typeof step !== 'object') return step;
+
+            const nextStep = { ...step };
+            if (nextStep.id === 'clone' && Array.isArray(nextStep.args) && nextStep.args.length > 0) {
+              nextStep.args = [...nextStep.args];
+              nextStep.args[nextStep.args.length - 1] = resolvedInstallDir;
+              nextStep.cwd = resolvedInstallRoot;
+            } else if (typeof nextStep.cwd === 'string') {
+              if (nextStep.cwd === plan.installRoot || nextStep.cwd === plan.installDir) {
+                nextStep.cwd = resolvedInstallDir;
+              }
+            }
+
+            return nextStep;
+          })
+        : plan.steps,
+    };
+  };
+
   const openDeployBuildModal = (repo = '', name = '', version = '') => {
     const derivedDefaults = deriveDeployBuildDefaults(repo);
     const resolvedName = name || derivedDefaults.serverName;
@@ -252,6 +299,8 @@ const MarketPage: React.FC = () => {
     setDeployBuildRepo(repo);
     setDeployBuildName(resolvedName);
     setDeployBuildVersion(resolvedVersion);
+    setDeployBuildTargetDir(deriveDeployBuildTargetDir(resolvedName || derivedDefaults.serverName));
+    setDeployBuildTargetDirTouched(false);
     setDeployBuildPreview(null);
     setDeployBuildPlanDraftJson('');
     setDeployBuildSubmitting(false);
@@ -308,12 +357,33 @@ const MarketPage: React.FC = () => {
     if (!value.trim()) {
       setDeployBuildName('');
       setDeployBuildVersion('');
+      if (!deployBuildTargetDirTouched) {
+        setDeployBuildTargetDir(deriveDeployBuildTargetDir('deployment'));
+      }
       return;
     }
 
     const derivedDefaults = deriveDeployBuildDefaults(value);
-    setDeployBuildName((prev) => (prev.trim() ? prev : derivedDefaults.serverName));
+    setDeployBuildName((prev) => {
+      const nextName = prev.trim() ? prev : derivedDefaults.serverName;
+      if (!deployBuildTargetDirTouched) {
+        setDeployBuildTargetDir(deriveDeployBuildTargetDir(nextName || derivedDefaults.serverName));
+      }
+      return nextName;
+    });
     setDeployBuildVersion((prev) => (prev.trim() ? prev : derivedDefaults.version));
+  };
+
+  const handleDeployBuildNameChange = (value: string) => {
+    setDeployBuildName(value);
+    if (!deployBuildTargetDirTouched) {
+      setDeployBuildTargetDir(deriveDeployBuildTargetDir(value));
+    }
+  };
+
+  const handleDeployBuildTargetDirChange = (value: string) => {
+    setDeployBuildTargetDir(value);
+    setDeployBuildTargetDirTouched(true);
   };
 
   const handleLocalInstall = async (server: MarketServer, config: ServerConfig) => {
@@ -459,6 +529,8 @@ const MarketPage: React.FC = () => {
     setDeployBuildRepo('');
     setDeployBuildName('');
     setDeployBuildVersion('');
+    setDeployBuildTargetDir('');
+    setDeployBuildTargetDirTouched(false);
     setDeployBuildPreview(null);
     setDeployBuildPlanDraftJson('');
     setDeployBuildSelectedJobId(null);
@@ -476,6 +548,10 @@ const MarketPage: React.FC = () => {
 
     try {
       setDeployBuildSubmitting(true);
+      const resolvedTargetDir = deployBuildTargetDir.trim();
+      if (!resolvedTargetDir) {
+        throw new Error('Target folder is required.');
+      }
 
       let planDraft = null as any;
       if (deployBuildPlanDraftJson.trim()) {
@@ -501,8 +577,9 @@ const MarketPage: React.FC = () => {
         throw new Error(previewResult.message || 'Failed to preview installation plan');
       }
 
-      const nextPlan = planDraft ?? previewResult.data;
-      setDeployBuildPreview(previewResult.data);
+      const basePlan = planDraft ?? previewResult.data;
+      const nextPlan = applyTargetDirToPlan(basePlan, resolvedTargetDir);
+      setDeployBuildPreview(applyTargetDirToPlan(previewResult.data, resolvedTargetDir));
       setDeployBuildPlanDraftJson(JSON.stringify(nextPlan, null, 2));
 
       // Show confirmation dialog instead of starting immediately
@@ -524,11 +601,12 @@ const MarketPage: React.FC = () => {
     try {
       setDeployBuildSubmitting(true);
 
+      const planForDeploy = applyTargetDirToPlan(deployBuildConfirmPlan, deployBuildTargetDir.trim());
       const installResult = await apiPost('/market/deploy', {
         repositoryUrl: deployBuildRepo.trim(),
         serverName: deployBuildName.trim() || undefined,
         version: deployBuildVersion.trim() || undefined,
-        plan: deployBuildConfirmPlan,
+        plan: planForDeploy,
       });
 
       if (!installResult.success) {
@@ -600,6 +678,7 @@ const MarketPage: React.FC = () => {
         repositoryUrl={deployBuildRepo}
         serverName={deployBuildName}
         version={deployBuildVersion}
+        targetDir={deployBuildTargetDir}
         preview={deployBuildPreview}
         planDraftJson={deployBuildPlanDraftJson}
         submitting={deployBuildSubmitting}
@@ -610,8 +689,9 @@ const MarketPage: React.FC = () => {
         selectedJobId={deployBuildSelectedJobId}
         onClose={resetDeployBuildModal}
         onRepositoryChange={handleDeployBuildRepoChange}
-        onServerNameChange={setDeployBuildName}
+        onServerNameChange={handleDeployBuildNameChange}
         onVersionChange={setDeployBuildVersion}
+        onTargetDirChange={handleDeployBuildTargetDirChange}
         onPlanDraftJsonChange={setDeployBuildPlanDraftJson}
         onSubmit={handleDeployBuildSubmit}
         onConfirm={handleDeployBuildConfirm}
