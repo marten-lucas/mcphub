@@ -351,7 +351,7 @@ const MarketPage: React.FC = () => {
 
   const handleOpenDeployBuildJob = async (jobId: string) => {
     try {
-      const result = await apiGet(`/market/deploy-build/jobs/${jobId}`);
+      const result = await apiGet(`/market/deploy/jobs/${jobId}`);
       if (result.success) {
         setDeployBuildSelectedJobId(jobId);
         setDeployBuildSelectedJob(result.data);
@@ -363,7 +363,7 @@ const MarketPage: React.FC = () => {
 
   const reloadDeployBuildJob = useCallback(async (jobId: string) => {
     try {
-      const result = await apiGet(`/market/deploy-build/jobs/${jobId}`);
+      const result = await apiGet(`/market/deploy/jobs/${jobId}`);
       if (result.success) {
         setDeployBuildSelectedJob(result.data);
       }
@@ -374,7 +374,7 @@ const MarketPage: React.FC = () => {
 
   const loadDeployBuildJobs = useCallback(async () => {
     try {
-      const result = await apiGet('/market/deploy-build/jobs');
+      const result = await apiGet('/market/deploy/jobs');
       if (result.success && Array.isArray(result.data)) {
         setDeployBuildJobs(result.data);
         if (deployBuildSelectedJobId) {
@@ -402,7 +402,7 @@ const MarketPage: React.FC = () => {
 
   const handleRetryDeployBuildJob = async (jobId: string) => {
     try {
-      const result = await apiPost(`/market/deploy-build/jobs/${jobId}/retry`);
+      const result = await apiPost(`/market/deploy/jobs/${jobId}/retry`);
       if (!result.success) {
         throw new Error(result.message || 'Failed to retry installation');
       }
@@ -415,7 +415,7 @@ const MarketPage: React.FC = () => {
 
   const handleDeinstallDeployBuildJob = async (jobId: string) => {
     try {
-      const result = await apiPost(`/market/deploy-build/jobs/${jobId}/deinstall`);
+      const result = await apiPost(`/market/deploy/jobs/${jobId}/deinstall`);
       if (!result.success) {
         throw new Error(result.message || 'Failed to deinstall installation');
       }
@@ -490,7 +490,7 @@ const MarketPage: React.FC = () => {
         throw new Error('Plan JSON must include a steps array.');
       }
 
-      const previewResult = await apiPost('/market/deploy-build/preview', {
+      const previewResult = await apiPost('/market/deploy/preview', {
         repositoryUrl: deployBuildRepo.trim(),
         serverName: deployBuildName.trim() || undefined,
         version: deployBuildVersion.trim() || undefined,
@@ -524,7 +524,7 @@ const MarketPage: React.FC = () => {
     try {
       setDeployBuildSubmitting(true);
 
-      const installResult = await apiPost('/market/deploy-build', {
+      const installResult = await apiPost('/market/deploy', {
         repositoryUrl: deployBuildRepo.trim(),
         serverName: deployBuildName.trim() || undefined,
         version: deployBuildVersion.trim() || undefined,
@@ -690,7 +690,7 @@ const MarketPage: React.FC = () => {
 
   if (selectedServer) {
     return (
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_33vw] items-start">
+      <div className={deployBuildOpen ? 'grid gap-6 lg:grid-cols-[minmax(0,1fr)_33vw] items-start' : 'w-full'}>
         <div className="min-w-0">
           <MarketServerDetail
             server={selectedServer}
@@ -712,7 +712,8 @@ const MarketPage: React.FC = () => {
             onEdit={handleEditCustomRepo}
           />
         </div>
-        <div className="min-w-0">{sharedOverlays}</div>
+        {deployBuildOpen && <div className="min-w-0">{sharedOverlays}</div>}
+        {!deployBuildOpen && sharedOverlays}
       </div>
     );
   }
