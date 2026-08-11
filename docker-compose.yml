@@ -19,8 +19,8 @@ services:
     ports:
       - "${MCPHUB_PORT:-3000}:3000"
     volumes:
-      - ./mcp_settings.json:/app/mcp_settings.json
-      - ./custom-servers.json:/app/custom-servers.json
+      - ${MCP_SETTINGS_PATH:-/opt/mcphub-data/mcp_settings.json}:/app/mcp_settings.json
+      - ${CUSTOM_SERVERS_PATH:-/opt/mcphub-data/custom-servers.json}:/app/custom-servers.json
       - mcphub-data:/app/data
       - deploy-builds:/var/lib/mcphub/deploy-builds
 
