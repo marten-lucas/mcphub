@@ -41,10 +41,11 @@ services:
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
       
       # Authentication - Enable local user login for testing/admin
-      BETTER_AUTH_ENABLED: "true"
+      BETTER_AUTH_ENABLED: "false"
       BETTER_AUTH_ALLOW_LOCAL_USER: "true"
       BETTER_AUTH_OIDC_ENABLED: "true"
       BETTER_AUTH_OIDC_CONFIG_VIA_UI: "true"
+      ADMIN_PASSWORD: "admin"
 
       # Optional: Custom npm registry
       # NPM_REGISTRY: https://registry.npmjs.org/
