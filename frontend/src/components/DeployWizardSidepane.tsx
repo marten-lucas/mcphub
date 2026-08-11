@@ -24,6 +24,7 @@ type WizardPlan = {
 
 interface DeployWizardSidepaneProps {
   open: boolean;
+  embedded?: boolean;
   repositoryUrl: string;
   serverName: string;
   version: string;
@@ -37,7 +38,7 @@ interface DeployWizardSidepaneProps {
   jobs: WizardJob[];
   selectedJob: WizardJob | null;
   selectedJobId: string | null;
-  onClose: () => void;
+  onClose?: () => void;
   onRepositoryChange: (value: string) => void;
   onServerNameChange: (value: string) => void;
   onVersionChange: (value: string) => void;
@@ -54,6 +55,7 @@ interface DeployWizardSidepaneProps {
 
 const DeployWizardSidepane: React.FC<DeployWizardSidepaneProps> = ({
   open,
+  embedded = false,
   repositoryUrl,
   serverName,
   version,
@@ -120,9 +122,14 @@ const DeployWizardSidepane: React.FC<DeployWizardSidepaneProps> = ({
 
   if (!open) return null;
 
+  const containerClass = embedded ? 'w-full mt-6' : 'w-full lg:w-[33vw] lg:min-w-[33vw] lg:shrink-0';
+  const panelClass = embedded
+    ? 'overflow-hidden rounded border border-[var(--hub-line)] bg-[var(--hub-bg)] shadow-2xl flex flex-col'
+    : 'sticky top-6 h-[calc(100vh-3rem)] overflow-hidden rounded border border-[var(--hub-line)] bg-[var(--hub-bg)] shadow-2xl flex flex-col';
+
   return (
-    <div className="w-full lg:w-[33vw] lg:min-w-[33vw] lg:shrink-0">
-      <aside className="sticky top-6 h-[calc(100vh-3rem)] overflow-hidden rounded border border-[var(--hub-line)] bg-[var(--hub-bg)] shadow-2xl flex flex-col">
+    <div className={containerClass}>
+      <aside className={panelClass}>
         <div className="flex items-start justify-between gap-4 border-b border-[var(--hub-line)] px-6 py-5">
           <div className="min-w-0">
             <div className="mb-1 flex items-center gap-2">
@@ -137,9 +144,11 @@ const DeployWizardSidepane: React.FC<DeployWizardSidepaneProps> = ({
               {repositoryUrl || 'Repository URL'}
             </p>
           </div>
-          <button type="button" className="hub-icon-btn sm" onClick={onClose}>
-            <X size={13} />
-          </button>
+          {!embedded && onClose ? (
+            <button type="button" className="hub-icon-btn sm" onClick={onClose}>
+              <X size={13} />
+            </button>
+          ) : null}
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">

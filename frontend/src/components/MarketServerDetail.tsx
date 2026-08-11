@@ -14,11 +14,11 @@ interface MarketServerDetailProps {
   server: MarketServer;
   onBack: () => void;
   onInstall: (server: MarketServer, config: ServerConfig) => void;
-  onDeploy?: (server: MarketServer) => void;
   installing?: boolean;
   isInstalled?: boolean;
   onDelete?: (serverName: string) => void;
   onEdit?: (server: MarketServer) => void;
+  deploymentSection?: React.ReactNode;
   buildTemplateServers?: Array<{
     name: string;
     version?: string;
@@ -29,11 +29,11 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
   server,
   onBack,
   onInstall,
-  onDeploy,
   installing = false,
   isInstalled = false,
   onDelete,
   onEdit,
+  deploymentSection,
   buildTemplateServers = [],
 }) => {
   const { t } = useTranslation();
@@ -256,10 +256,6 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
     }
   };
 
-  const handleDeploy = () => {
-    onDeploy?.(server);
-  };
-
   const handleDeleteConfirm = async () => {
     if (!isCustomServer) return;
 
@@ -403,14 +399,6 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
               {t('market.custom', { defaultValue: 'Custom' })}
             </span>
           ) : null}
-          {isCustomServer && onDeploy && (
-            <button
-              onClick={handleDeploy}
-              className="hub-btn ghost mr-2"
-            >
-              Deploy
-            </button>
-          )}
           <button
             onClick={handleInstall}
             disabled={buttonProps.disabled}
@@ -517,6 +505,8 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
           </div>
         )}
       </div>
+
+      {isCustomServer && deploymentSection ? deploymentSection : null}
 
       <div className="mt-6 flex justify-between items-center gap-3">
         <div className="flex gap-2">

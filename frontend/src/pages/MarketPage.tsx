@@ -527,6 +527,10 @@ const MarketPage: React.FC = () => {
     openDeployBuildModal(repoUrl, serverName);
   };
 
+  const isCustomMarketServer = (server: MarketServer) =>
+    (server.categories || []).some((category) => category.toLowerCase() === 'custom') ||
+    Boolean(server.repository?.url);
+
   const resetDeployBuildModal = useCallback(() => {
     setDeployBuildOpen(false);
     setDeployBuildRepo('');
@@ -677,50 +681,50 @@ const MarketPage: React.FC = () => {
     errorMessage === 'MCPROUTER_API_KEY_NOT_CONFIGURED' ||
     errorMessage.toLowerCase().includes('mcprouter api key not configured');
 
-  const sharedOverlays = (
-    <>
-      <DeployWizardSidepane
-        open={deployBuildOpen}
-        repositoryUrl={deployBuildRepo}
-        serverName={deployBuildName}
-        version={deployBuildVersion}
-        targetDir={deployBuildTargetDir}
-        preview={deployBuildPreview}
-        planDraftJson={deployBuildPlanDraftJson}
-        submitting={deployBuildSubmitting}
-        confirmOpen={deployBuildConfirmOpen}
-        confirmPlan={deployBuildConfirmPlan}
-        destructiveAck={deployBuildDeleteAck}
-        jobs={deployBuildJobs}
-        selectedJob={deployBuildSelectedJob}
-        selectedJobId={deployBuildSelectedJobId}
-        onClose={resetDeployBuildModal}
-        onRepositoryChange={handleDeployBuildRepoChange}
-        onServerNameChange={handleDeployBuildNameChange}
-        onVersionChange={setDeployBuildVersion}
-        onTargetDirChange={handleDeployBuildTargetDirChange}
-        onPlanDraftJsonChange={setDeployBuildPlanDraftJson}
-        onSubmit={handleDeployBuildSubmit}
-        onConfirm={handleDeployBuildConfirm}
-        onDestructiveAckChange={setDeployBuildDeleteAck}
-        onCancelConfirm={() => {
-          setDeployBuildConfirmOpen(false);
-          setDeployBuildConfirmPlan(null);
-          setDeployBuildDeleteAck(false);
-        }}
-        onOpenJob={(jobId) => void handleOpenDeployBuildJob(jobId)}
-        onRetryJob={(jobId) => void handleRetryDeployBuildJob(jobId)}
-        onDeinstallJob={(jobId) => void handleDeinstallDeployBuildJob(jobId)}
-      />
+  const deployWizard = (
+    <DeployWizardSidepane
+      open={deployBuildOpen}
+      repositoryUrl={deployBuildRepo}
+      serverName={deployBuildName}
+      version={deployBuildVersion}
+      targetDir={deployBuildTargetDir}
+      preview={deployBuildPreview}
+      planDraftJson={deployBuildPlanDraftJson}
+      submitting={deployBuildSubmitting}
+      confirmOpen={deployBuildConfirmOpen}
+      confirmPlan={deployBuildConfirmPlan}
+      destructiveAck={deployBuildDeleteAck}
+      jobs={deployBuildJobs}
+      selectedJob={deployBuildSelectedJob}
+      selectedJobId={deployBuildSelectedJobId}
+      onClose={resetDeployBuildModal}
+      onRepositoryChange={handleDeployBuildRepoChange}
+      onServerNameChange={handleDeployBuildNameChange}
+      onVersionChange={setDeployBuildVersion}
+      onTargetDirChange={handleDeployBuildTargetDirChange}
+      onPlanDraftJsonChange={setDeployBuildPlanDraftJson}
+      onSubmit={handleDeployBuildSubmit}
+      onConfirm={handleDeployBuildConfirm}
+      onDestructiveAckChange={setDeployBuildDeleteAck}
+      onCancelConfirm={() => {
+        setDeployBuildConfirmOpen(false);
+        setDeployBuildConfirmPlan(null);
+        setDeployBuildDeleteAck(false);
+      }}
+      onOpenJob={(jobId) => void handleOpenDeployBuildJob(jobId)}
+      onRetryJob={(jobId) => void handleRetryDeployBuildJob(jobId)}
+      onDeinstallJob={(jobId) => void handleDeinstallDeployBuildJob(jobId)}
+    />
+  );
 
-      <AddCustomRepoModal
-        isOpen={addCustomRepoModalOpen}
-        onClose={handleCloseAddCustomRepoModal}
-        onSuccess={handleCustomRepoModalSuccess}
-        mode={editingCustomServer ? 'edit' : 'add'}
-        initialServer={editingCustomServer}
-      />
-    </>
+  const addCustomRepoOverlay = (
+    <AddCustomRepoModal
+      isOpen={addCustomRepoModalOpen}
+      onClose={handleCloseAddCustomRepoModal}
+      onSuccess={handleCustomRepoModalSuccess}
+      mode={editingCustomServer ? 'edit' : 'add'}
+      initialServer={editingCustomServer}
+    />
   );
 
   const handlePageChange = (page: number) => {
@@ -777,32 +781,80 @@ const MarketPage: React.FC = () => {
           }))
       : [];
 
+  const showInlineDeploy = Boolean(
+    selectedServer && currentTab === 'local' && isCustomMarketServer(selectedServer),
+  );
+
+  useEffect(() => {
+    if (!showInlineDeploy || !selectedServer) {
+      return;
+    }
+    openDeployBuildModal(
+      selectedServer.repository?.url || '',
+      selectedServer.name || '',
+      selectedServer.version || '',
+    );
+  }, [showInlineDeploy, selectedServer?.name, selectedServer?.repository?.url, selectedServer?.version]);
+
   if (selectedServer) {
     return (
-      <div className={deployBuildOpen ? 'grid gap-6 lg:grid-cols-[minmax(0,1fr)_33vw] items-start' : 'w-full'}>
-        <div className="min-w-0">
-          <MarketServerDetail
-            server={selectedServer}
-            onBack={handleBackToList}
-            onInstall={handleLocalInstall}
-            installing={installing}
-            isInstalled={isServerInstalled(selectedServer.name)}
-            buildTemplateServers={localBuildTemplateServers}
-            onDeploy={(server) => openDeployBuildModal(server.repository?.url || '', server.name)}
-            onDelete={(serverName) => {
-              setSelectedServer(null);
-              void fetchLocalMarketServers();
-              setSearchParams((prev) => {
-                const next = new URLSearchParams(prev);
-                next.set('tab', 'local');
-                return next;
-              });
-            }}
-            onEdit={handleEditCustomRepo}
-          />
-        </div>
-        {deployBuildOpen && <div className="min-w-0">{sharedOverlays}</div>}
-        {!deployBuildOpen && sharedOverlays}
+      <div className="w-full">
+        <MarketServerDetail
+          server={selectedServer}
+          onBack={handleBackToList}
+          onInstall={handleLocalInstall}
+          installing={installing}
+          isInstalled={isServerInstalled(selectedServer.name)}
+          buildTemplateServers={localBuildTemplateServers}
+          deploymentSection={
+            showInlineDeploy ? (
+              <DeployWizardSidepane
+                open
+                embedded
+                repositoryUrl={deployBuildRepo}
+                serverName={deployBuildName}
+                version={deployBuildVersion}
+                targetDir={deployBuildTargetDir}
+                preview={deployBuildPreview}
+                planDraftJson={deployBuildPlanDraftJson}
+                submitting={deployBuildSubmitting}
+                confirmOpen={deployBuildConfirmOpen}
+                confirmPlan={deployBuildConfirmPlan}
+                destructiveAck={deployBuildDeleteAck}
+                jobs={deployBuildJobs}
+                selectedJob={deployBuildSelectedJob}
+                selectedJobId={deployBuildSelectedJobId}
+                onRepositoryChange={handleDeployBuildRepoChange}
+                onServerNameChange={handleDeployBuildNameChange}
+                onVersionChange={setDeployBuildVersion}
+                onTargetDirChange={handleDeployBuildTargetDirChange}
+                onPlanDraftJsonChange={setDeployBuildPlanDraftJson}
+                onSubmit={handleDeployBuildSubmit}
+                onConfirm={handleDeployBuildConfirm}
+                onDestructiveAckChange={setDeployBuildDeleteAck}
+                onCancelConfirm={() => {
+                  setDeployBuildConfirmOpen(false);
+                  setDeployBuildConfirmPlan(null);
+                  setDeployBuildDeleteAck(false);
+                }}
+                onOpenJob={(jobId) => void handleOpenDeployBuildJob(jobId)}
+                onRetryJob={(jobId) => void handleRetryDeployBuildJob(jobId)}
+                onDeinstallJob={(jobId) => void handleDeinstallDeployBuildJob(jobId)}
+              />
+            ) : null
+          }
+          onDelete={(serverName) => {
+            setSelectedServer(null);
+            void fetchLocalMarketServers();
+            setSearchParams((prev) => {
+              const next = new URLSearchParams(prev);
+              next.set('tab', 'local');
+              return next;
+            });
+          }}
+          onEdit={handleEditCustomRepo}
+        />
+        {addCustomRepoOverlay}
       </div>
     );
   }
@@ -948,7 +1000,8 @@ const MarketPage: React.FC = () => {
         </>
       )}
 
-      {sharedOverlays}
+      {addCustomRepoOverlay}
+      {!selectedServer && deployWizard}
 
       {/* Search bar */}
       {(isLocalTab || isRegistryTab) && (
