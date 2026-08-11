@@ -87,6 +87,11 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     });
   } catch (error) {
     console.error('Login error:', error);
+    if (error instanceof Error) {
+      console.error('Error name:', error.name);
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack?.split('\n').slice(0, 5).join('\n'));
+    }
     res.status(500).json({
       success: false,
       message: t('api.errors.server_error'),
