@@ -343,7 +343,7 @@ const runBackgroundCommand = async (
   command: string,
   args: string[],
   options: { cwd?: string; env?: NodeJS.ProcessEnv; log: (line: string) => void },
-): Promise<number> => {
+): Promise<{ pid: number; exited: Promise<number | null> }> => {
   assertSafeCommand(command, args);
 
   const child = spawn(command, args, {
@@ -358,6 +358,12 @@ const runBackgroundCommand = async (
     throw new Error('Failed to get process ID for background command');
   }
 
+  const exited = new Promise<number | null>((resolve) => {
+    child.once('close', (code) => {
+      resolve(code);
+    });
+  });
+
   child.stdout?.on('data', (chunk: Buffer) => {
     const lines = chunk.toString().split(/\r?\n/).filter(Boolean);
     lines.forEach((line) => options.log(maskSensitiveData(line)));
@@ -368,7 +374,24 @@ const runBackgroundCommand = async (
     lines.forEach((line) => options.log(maskSensitiveData(line)));
   });
 
-  return child.pid;
+  return { pid: child.pid, exited };
+};
+
+const monitorBackgroundStart = async (
+  pid: number,
+  childExit: Promise<number | null>,
+  log: (line: string) => void,
+  graceMs = 10000,
+): Promise<void> => {
+  log(`Monitoring background process ${pid} for ${graceMs / 1000}s startup grace period.`);
+  await Promise.race([
+    childExit.then((code) => {
+      throw new Error(`Background process exited during startup${code !== null ? ` with code ${code}` : ''}.`);
+    }),
+    new Promise<void>((resolve) => {
+      setTimeout(resolve, graceMs);
+    }),
+  ]);
 };
 
 const analyzeRepository = async (repositoryUrl: string, serverName: string): Promise<{ engine: 'node' | 'python' | 'docker' | 'unknown'; prerequisites: string[] }> => {
@@ -727,7 +750,7 @@ export const executeDeployBuildJob = async (jobId: string): Promise<void> => {
       if (step.background) {
         currentJob = addLogLine(currentJob, `Starting background process: ${step.title}`);
         await persist(currentJob);
-        const pid = await runBackgroundCommand(step.command, step.args ?? [], {
+        const background = await runBackgroundCommand(step.command, step.args ?? [], {
           cwd: step.cwd ?? currentJob.installDir,
           env: stepEnv,
           log: (line) => {
@@ -735,6 +758,11 @@ export const executeDeployBuildJob = async (jobId: string): Promise<void> => {
             void persist(currentJob);
           },
         });
+        await monitorBackgroundStart(background.pid, background.exited, (line) => {
+          currentJob = addLogLine(currentJob, line);
+          void persist(currentJob);
+        });
+        const pid = background.pid;
         currentJob = addLogLine(currentJob, `Background process started with pid ${pid}.`);
         currentJob = { ...currentJob, processPid: pid, updatedAt: new Date().toISOString() };
         await persist(currentJob);
