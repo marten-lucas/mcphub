@@ -85,21 +85,28 @@ const DeployWizardSidepane: React.FC<DeployWizardSidepaneProps> = ({
   onDeinstallJob,
 }) => {
   const logRef = useRef<HTMLPreElement | null>(null);
+  const stageOrder = ['detect', 'build', 'deploy'] as const;
+  type DeployStage = (typeof stageOrder)[number];
+  const [activeStage, setActiveStage] = React.useState<DeployStage>('detect');
 
   const currentStageIndex = useMemo(() => {
-    if (selectedJob?.status === 'succeeded') return 5;
-    if (selectedJob?.status === 'failed') return 4;
-    if (selectedJob) return 4;
-    if (confirmOpen) return 3;
-    if (preview) return 2;
-    return 0;
-  }, [confirmOpen, preview, selectedJob]);
+    if (selectedJob) return 2;
+    return stageOrder.indexOf(activeStage);
+  }, [activeStage, selectedJob]);
 
   useEffect(() => {
     if (logRef.current) {
       logRef.current.scrollTop = logRef.current.scrollHeight;
     }
   }, [selectedJob?.logs?.length, selectedJob?.status]);
+
+  useEffect(() => {
+    if (selectedJob) {
+      setActiveStage('deploy');
+    } else if (preview) {
+      setActiveStage((current) => (current === 'deploy' ? current : 'build'));
+    }
+  }, [preview, selectedJob]);
 
   if (!open) return null;
 
@@ -110,7 +117,12 @@ const DeployWizardSidepane: React.FC<DeployWizardSidepaneProps> = ({
     const completed = index < currentStageIndex;
     const active = index === currentStageIndex;
     return (
-      <div key={label} className="flex items-center gap-2 min-w-0">
+      <button
+        key={label}
+        type="button"
+        onClick={() => setActiveStage(stageOrder[index])}
+        className="flex items-center gap-2 min-w-0 text-left"
+      >
         {completed ? (
           <CheckCircle2 size={14} className="text-green-600" />
         ) : active ? (
@@ -121,19 +133,13 @@ const DeployWizardSidepane: React.FC<DeployWizardSidepaneProps> = ({
         <span className={`text-[12px] truncate ${active ? 'font-medium text-[var(--hub-ink)]' : 'text-[var(--hub-ink-3)]'}`}>
           {label}
         </span>
-      </div>
+      </button>
     );
   };
 
   return (
-    <div className="fixed inset-0 z-[70]">
-      <button
-        type="button"
-        aria-label="Close deploy wizard"
-        className="absolute inset-0 bg-black/45"
-        onClick={onClose}
-      />
-      <aside className="absolute right-0 top-0 h-full w-full max-w-[1180px] bg-[var(--hub-bg)] shadow-2xl border-l border-[var(--hub-line)] flex flex-col">
+    <div className="w-full lg:w-[33vw] lg:min-w-[33vw] lg:shrink-0">
+      <aside className="sticky top-6 h-[calc(100vh-3rem)] bg-[var(--hub-bg)] shadow-2xl border border-[var(--hub-line)] flex flex-col overflow-hidden">
         <div className="flex items-start justify-between gap-4 px-6 py-5 border-b border-[var(--hub-line)]">
           <div className="min-w-0">
             <div className="flex items-center gap-2 mb-1">
@@ -154,166 +160,174 @@ const DeployWizardSidepane: React.FC<DeployWizardSidepaneProps> = ({
         </div>
 
         <div className="px-6 py-4 border-b border-[var(--hub-line)]">
-          <div className="grid gap-2 md:grid-cols-6">{stageItems.map((stage, index) => renderStage(index, stage.label))}</div>
+          <div className="grid gap-2 md:grid-cols-3">{stageItems.map((stage, index) => renderStage(index, stage.label))}</div>
         </div>
 
-        <div className="flex-1 overflow-hidden grid lg:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]">
+        <div className="flex-1 overflow-hidden grid lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)]">
           <div className="overflow-y-auto px-6 py-5 border-r border-[var(--hub-line)]">
-            {!hasActiveJob ? (
-              <form onSubmit={onSubmit} className="space-y-4">
-                <section className="hub-card p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-semibold text-[var(--hub-ink)]">1. Source</h3>
-                    <span className="text-[11px] text-[var(--hub-ink-3)]">Clone the repo first</span>
+            {activeStage === 'detect' && (
+              <section className="hub-card p-4 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-[var(--hub-ink)]">1. Detect</h3>
+                    <p className="text-sm text-[var(--hub-ink-3)]">Detect the repo and derive the build plan.</p>
                   </div>
+                  <button type="button" className="hub-btn ghost" onClick={() => setActiveStage('build')} disabled={!preview}>
+                    Build plan
+                  </button>
+                </div>
+                <label className="block">
+                  <span className="text-sm font-medium text-[var(--hub-ink-2)]">Repository URL</span>
+                  <input
+                    className="hub-input mt-1 w-full"
+                    value={repositoryUrl}
+                    onChange={(e) => onRepositoryChange(e.target.value)}
+                    placeholder="https://github.com/owner/repo"
+                    required
+                  />
+                </label>
+                <div className="grid gap-4 md:grid-cols-2">
                   <label className="block">
-                    <span className="text-sm font-medium text-[var(--hub-ink-2)]">Repository URL</span>
+                    <span className="text-sm font-medium text-[var(--hub-ink-2)]">Build name</span>
                     <input
                       className="hub-input mt-1 w-full"
-                      value={repositoryUrl}
-                      onChange={(e) => onRepositoryChange(e.target.value)}
-                      placeholder="https://github.com/owner/repo"
-                      required
+                      value={serverName}
+                      onChange={(e) => onServerNameChange(e.target.value)}
+                      placeholder="authentik-mcp"
                     />
                   </label>
-                  <div className="grid gap-4 md:grid-cols-2 mt-4">
-                    <label className="block">
-                      <span className="text-sm font-medium text-[var(--hub-ink-2)]">Build name</span>
-                      <input
-                        className="hub-input mt-1 w-full"
-                        value={serverName}
-                        onChange={(e) => onServerNameChange(e.target.value)}
-                        placeholder="authentik-mcp"
-                      />
-                    </label>
-                    <label className="block">
-                      <span className="text-sm font-medium text-[var(--hub-ink-2)]">Version / tag</span>
-                      <input
-                        className="hub-input mt-1 w-full"
-                        value={version}
-                        onChange={(e) => onVersionChange(e.target.value)}
-                        placeholder="main or v1.2.3"
-                      />
-                    </label>
+                  <label className="block">
+                    <span className="text-sm font-medium text-[var(--hub-ink-2)]">Version / tag</span>
+                    <input
+                      className="hub-input mt-1 w-full"
+                      value={version}
+                      onChange={(e) => onVersionChange(e.target.value)}
+                      placeholder="main or v1.2.3"
+                    />
+                  </label>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-[12px] text-[var(--hub-ink-3)]">
+                    The repo is already known from the detail page.
                   </div>
-                </section>
+                  <button type="submit" className="hub-btn primary" disabled={submitting}>
+                    {submitting ? 'Detecting…' : 'Detect'}
+                  </button>
+                </div>
+              </section>
+            )}
 
-                {preview && (
-                  <section className="hub-card p-4 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-semibold text-[var(--hub-ink)]">2. Detect & plan</h3>
-                      <span className="text-[11px] text-[var(--hub-ink-3)] uppercase tracking-wide">
-                        {preview.engine}
-                      </span>
+            {activeStage === 'build' && (
+              <section className="hub-card p-4 space-y-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-[var(--hub-ink)]">2. Build plan</h3>
+                    <p className="text-sm text-[var(--hub-ink-3)]">Review the generated plan and adjust JSON if needed.</p>
+                  </div>
+                  <span className="text-[11px] text-[var(--hub-ink-3)] uppercase tracking-wide">
+                    {preview?.engine || 'pending'}
+                  </span>
+                </div>
+
+                {preview ? (
+                  <>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="rounded border border-[var(--hub-line)] bg-[var(--hub-surface)] p-3 text-sm">
+                        <div className="text-[11px] text-[var(--hub-ink-3)]">Detected steps</div>
+                        <div className="font-medium text-[var(--hub-ink)]">{preview.steps?.length || 0}</div>
+                      </div>
+                      <div className="rounded border border-[var(--hub-line)] bg-[var(--hub-surface)] p-3 text-sm">
+                        <div className="text-[11px] text-[var(--hub-ink-3)]">Selected port</div>
+                        <div className="font-medium text-[var(--hub-ink)]">{preview.selectedPort || 'auto'}</div>
+                      </div>
                     </div>
 
-                    <div>
-                      <div className="text-[12px] text-[var(--hub-ink-3)] mb-1">Steps</div>
-                      <ul className="space-y-1.5">
-                        {preview.steps?.map((step) => (
-                          <li key={step.id} className="flex items-start gap-2 text-sm">
-                            <span className="text-[var(--hub-ink-3)]">•</span>
-                            <span>{step.title}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-
-                    <label className="block">
-                      <span className="text-[12px] text-[var(--hub-ink-3)]">Plan override (JSON)</span>
-                      <textarea
-                        className="hub-input mt-1 min-h-56 w-full font-mono text-xs"
-                        value={planDraftJson}
-                        onChange={(e) => onPlanDraftJsonChange(e.target.value)}
-                        spellCheck={false}
-                      />
-                    </label>
-                  </section>
+                    <ul className="space-y-1.5">
+                      {preview.steps?.map((step) => (
+                        <li key={step.id} className="flex items-start gap-2 text-sm">
+                          <span className="text-[var(--hub-ink-3)]">•</span>
+                          <span>{step.title}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                ) : (
+                  <div className="rounded border border-dashed border-[var(--hub-line)] bg-[var(--hub-surface)] p-4 text-sm text-[var(--hub-ink-3)]">
+                    Click Detect first to generate a plan.
+                  </div>
                 )}
 
-                {!confirmOpen ? (
-                  <section className="hub-card p-4">
-                    <h3 className="text-sm font-semibold text-[var(--hub-ink)] mb-2">3. Review</h3>
-                    <p className="text-sm text-[var(--hub-ink-3)]">
-                      Confirm the repository, check the generated plan, then start the deployment.
-                    </p>
-                    <div className="mt-4 flex items-center justify-between gap-3">
-                      <div className="text-[12px] text-[var(--hub-ink-3)]">
-                        The wizard stops at <span className="font-medium text-[var(--hub-ink)]">Build erfolgreich</span>.
-                      </div>
-                      <button type="submit" className="hub-btn primary" disabled={submitting}>
-                        {submitting ? 'Preparing…' : 'Deploy'}
-                      </button>
-                    </div>
-                  </section>
-                ) : confirmPlan ? (
-                  <section className="hub-card p-4">
-                    <h3 className="text-sm font-semibold text-[var(--hub-ink)] mb-2">4. Confirm</h3>
-                    <div className="text-sm text-[var(--hub-ink-2)] space-y-1">
-                      <div>Repository: {confirmPlan.repositoryUrl}</div>
-                      <div>Engine: {confirmPlan.engine}</div>
-                      <div>Steps: {confirmPlan.steps?.length || 0}</div>
-                    </div>
-                    <div className="mt-4 flex justify-end gap-2">
-                      <button type="button" className="hub-btn ghost" onClick={onCancelConfirm} disabled={submitting}>
-                        Back
-                      </button>
-                      <button type="button" className="hub-btn primary" onClick={onConfirm} disabled={submitting}>
-                        {submitting ? 'Starting…' : 'Confirm & deploy'}
-                      </button>
-                    </div>
-                  </section>
-                ) : null}
-              </form>
-            ) : (
-              <div className="space-y-4">
+                <label className="block">
+                  <span className="text-[12px] text-[var(--hub-ink-3)]">Plan override (JSON)</span>
+                  <textarea
+                    className="hub-input mt-1 min-h-56 w-full font-mono text-xs"
+                    value={planDraftJson}
+                    onChange={(e) => onPlanDraftJsonChange(e.target.value)}
+                    spellCheck={false}
+                  />
+                </label>
+
+                <div className="flex items-center justify-between gap-3">
+                  <button type="button" className="hub-btn ghost" onClick={() => setActiveStage('detect')}>
+                    Back
+                  </button>
+                  <button type="button" className="hub-btn primary" onClick={onConfirm} disabled={submitting || !preview}>
+                    {submitting ? 'Starting…' : 'Deploy'}
+                  </button>
+                </div>
+              </section>
+            )}
+
+            {activeStage === 'deploy' && (
+              <section className="space-y-4">
                 <section className="hub-card p-4">
                   <div className="flex items-center justify-between gap-3 mb-3">
                     <div>
-                      <h3 className="text-sm font-semibold text-[var(--hub-ink)]">4. Execution</h3>
+                      <h3 className="text-sm font-semibold text-[var(--hub-ink)]">3. Deploy</h3>
                       <p className="text-sm text-[var(--hub-ink-3)] truncate">
-                        {selectedJob.serverName} {selectedJob.version ? `· ${selectedJob.version}` : ''}
+                        {selectedJob?.serverName || serverName} {selectedJob?.version ? `· ${selectedJob.version}` : version ? `· ${version}` : ''}
                       </p>
                     </div>
                     <span className="rounded-full px-2 py-1 text-[11px] uppercase tracking-wide bg-[var(--hub-surface)] border border-[var(--hub-line)]">
-                      {selectedJob.status}
+                      {selectedJob?.status || (submitting ? 'starting' : 'ready')}
                     </span>
                   </div>
 
-                  {selectedJob.status === 'succeeded' ? (
+                  {selectedJob?.status === 'succeeded' ? (
                     <div className="rounded border border-green-200 bg-green-50 p-3 text-sm text-green-900">
                       Build erfolgreich. The build template is ready for Add server.
                     </div>
-                  ) : selectedJob.status === 'failed' ? (
+                  ) : selectedJob?.status === 'failed' ? (
                     <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-900 flex gap-2">
                       <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
                       <div>{selectedJob.error || 'Deployment failed.'}</div>
                     </div>
                   ) : (
                     <div className="rounded border border-[var(--hub-line)] bg-[var(--hub-surface)] p-3 text-sm text-[var(--hub-ink-2)]">
-                      The deployment is running in the background.
+                      {submitting
+                        ? 'Starting deployment...'
+                        : 'Click Deploy from Build plan to start the installation.'}
                     </div>
                   )}
                 </section>
 
-              </div>
+                <section className="hub-card p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-[var(--hub-ink)]">Console log</h3>
+                    <TerminalSquare size={14} className="text-[var(--hub-ink-3)]" />
+                  </div>
+                  <pre
+                    ref={logRef}
+                    className="max-h-[26rem] overflow-auto whitespace-pre-wrap rounded border border-[var(--hub-line)] bg-[var(--hub-bg-2)] p-3 text-xs leading-5"
+                  >
+                    {consoleLines.join('\n')}
+                  </pre>
+                </section>
+              </section>
             )}
           </div>
 
           <div className="overflow-y-auto px-6 py-5">
-            <section className="hub-card p-4 mb-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-[var(--hub-ink)]">5. Console log</h3>
-                <TerminalSquare size={14} className="text-[var(--hub-ink-3)]" />
-              </div>
-              <pre
-                ref={logRef}
-                className="max-h-[34rem] overflow-auto whitespace-pre-wrap rounded border border-[var(--hub-line)] bg-[var(--hub-bg-2)] p-3 text-xs leading-5"
-              >
-                {consoleLines.join('\n')}
-              </pre>
-            </section>
-
             <section className="hub-card p-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-sm font-semibold text-[var(--hub-ink)]">Recent deployments</h3>

@@ -349,33 +349,6 @@ const MarketPage: React.FC = () => {
     }
   };
 
-  const loadDeployBuildJobs = useCallback(async () => {
-    try {
-      const result = await apiGet('/market/deploy-build/jobs');
-      if (result.success && Array.isArray(result.data)) {
-        setDeployBuildJobs(result.data);
-        if (deployBuildSelectedJobId) {
-          const selected = result.data.find((job: any) => job.id === deployBuildSelectedJobId);
-          if (selected) {
-            setDeployBuildSelectedJob(selected);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load deploy build jobs', error);
-    }
-  }, [deployBuildSelectedJobId]);
-
-  useEffect(() => {
-    void loadDeployBuildJobs();
-
-    const intervalId = window.setInterval(() => {
-      void loadDeployBuildJobs();
-    }, 5000);
-
-    return () => window.clearInterval(intervalId);
-  }, [loadDeployBuildJobs]);
-
   const handleOpenDeployBuildJob = async (jobId: string) => {
     try {
       const result = await apiGet(`/market/deploy-build/jobs/${jobId}`);
@@ -387,6 +360,45 @@ const MarketPage: React.FC = () => {
       console.error('Failed to fetch deploy build job', error);
     }
   };
+
+  const reloadDeployBuildJob = useCallback(async (jobId: string) => {
+    try {
+      const result = await apiGet(`/market/deploy-build/jobs/${jobId}`);
+      if (result.success) {
+        setDeployBuildSelectedJob(result.data);
+      }
+    } catch (error) {
+      console.error('Failed to refresh deploy build job', error);
+    }
+  }, []);
+
+  const loadDeployBuildJobs = useCallback(async () => {
+    try {
+      const result = await apiGet('/market/deploy-build/jobs');
+      if (result.success && Array.isArray(result.data)) {
+        setDeployBuildJobs(result.data);
+        if (deployBuildSelectedJobId) {
+          const selected = result.data.find((job: any) => job.id === deployBuildSelectedJobId);
+          if (selected) {
+            setDeployBuildSelectedJob(selected);
+            void reloadDeployBuildJob(deployBuildSelectedJobId);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load deploy build jobs', error);
+    }
+  }, [deployBuildSelectedJobId, reloadDeployBuildJob]);
+
+  useEffect(() => {
+    void loadDeployBuildJobs();
+
+    const intervalId = window.setInterval(() => {
+      void loadDeployBuildJobs();
+    }, 5000);
+
+    return () => window.clearInterval(intervalId);
+  }, [loadDeployBuildJobs]);
 
   const handleRetryDeployBuildJob = async (jobId: string) => {
     try {
@@ -525,6 +537,9 @@ const MarketPage: React.FC = () => {
 
       setDeployBuildSelectedJobId(installResult.data?.id ?? null);
       setDeployBuildSelectedJob(installResult.data ?? null);
+      if (installResult.data?.id) {
+        await reloadDeployBuildJob(installResult.data.id);
+      }
       showToast(`Deployment started for ${deployBuildConfirmPlan.serverName}.`, 'success');
       setDeployBuildConfirmOpen(false);
       setDeployBuildConfirmPlan(null);
@@ -675,28 +690,30 @@ const MarketPage: React.FC = () => {
 
   if (selectedServer) {
     return (
-      <>
-        <MarketServerDetail
-          server={selectedServer}
-          onBack={handleBackToList}
-          onInstall={handleLocalInstall}
-          installing={installing}
-          isInstalled={isServerInstalled(selectedServer.name)}
-          buildTemplateServers={localBuildTemplateServers}
-          onDeploy={(server) => openDeployBuildModal(server.repository?.url || '', server.name)}
-          onDelete={(serverName) => {
-            setSelectedServer(null);
-            void fetchLocalMarketServers();
-            setSearchParams((prev) => {
-              const next = new URLSearchParams(prev);
-              next.set('tab', 'local');
-              return next;
-            });
-          }}
-          onEdit={handleEditCustomRepo}
-        />
-        {sharedOverlays}
-      </>
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_33vw] items-start">
+        <div className="min-w-0">
+          <MarketServerDetail
+            server={selectedServer}
+            onBack={handleBackToList}
+            onInstall={handleLocalInstall}
+            installing={installing}
+            isInstalled={isServerInstalled(selectedServer.name)}
+            buildTemplateServers={localBuildTemplateServers}
+            onDeploy={(server) => openDeployBuildModal(server.repository?.url || '', server.name)}
+            onDelete={(serverName) => {
+              setSelectedServer(null);
+              void fetchLocalMarketServers();
+              setSearchParams((prev) => {
+                const next = new URLSearchParams(prev);
+                next.set('tab', 'local');
+                return next;
+              });
+            }}
+            onEdit={handleEditCustomRepo}
+          />
+        </div>
+        <div className="min-w-0">{sharedOverlays}</div>
+      </div>
     );
   }
 
