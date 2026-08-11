@@ -14,7 +14,7 @@ const basePath = '';
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  base: './', // Always use relative paths for runtime configuration
+  base: '/market/', // Build for the deployed market subpath
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
