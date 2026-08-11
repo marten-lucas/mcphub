@@ -399,6 +399,7 @@ export interface ServerConfig {
   url?: string; // URL for SSE or streamable HTTP servers
   command?: string; // Command to execute for stdio-based servers
   args?: string[]; // Arguments for the command
+  cwd?: string; // Working directory for stdio-based servers (defaults to process.cwd())
   env?: Record<string, string>; // Environment variables
   headers?: Record<string, string>; // HTTP headers for SSE/streamable-http/openapi servers
   passthroughHeaders?: string[]; // Header names to pass through from MCP requests to upstream SSE/streamable-http servers

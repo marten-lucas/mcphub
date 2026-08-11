@@ -10,7 +10,20 @@ import type { ServerConfig } from '../types/index.js';
 import { getAppDataSource } from '../db/connection.js';
 import DeployBuildJobEntity from '../db/entities/DeployBuildJob.js';
 
-export type DeployBuildStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'deleting' | 'deinstalled';
+export type DeployBuildStatus = 
+  | 'queued' 
+  | 'running' 
+  | 'succeeded' 
+  | 'failed'
+  | 'prerequisite_error'
+  | 'clone_error'
+  | 'install_error'
+  | 'build_error'
+  | 'startup_error'
+  | 'port_error'
+  | 'network_error'
+  | 'deleting' 
+  | 'deinstalled';
 
 export interface DeployBuildStep {
   id: string;
@@ -377,6 +390,41 @@ const runBackgroundCommand = async (
   return { pid: child.pid, exited };
 };
 
+/**
+ * After background process startup grace period, verify it's still running.
+ * If it has already exited, throw an error immediately.
+ * This catches startup failures that occur right after the process launches.
+ */
+const verifyBackgroundHealthAfterStart = async (
+  pid: number,
+  childExit: Promise<number | null>,
+  log: (line: string) => void,
+): Promise<void> => {
+  // Wait a bit longer after grace period to catch early crashes
+  const delayMs = 2000; // Additional 2 seconds after grace period
+  log(`Performing health check after startup grace period...`);
+  
+  // Check if process has already exited (returns immediately if no error)
+  const raceResult = await Promise.race([
+    childExit.then((code) => {
+      return { exited: true, code } as const;
+    }),
+    new Promise<{ exited: false }>((resolve) => {
+      setTimeout(() => resolve({ exited: false }), delayMs);
+    }),
+  ]);
+
+  if (raceResult.exited) {
+    throw new Error(
+      `Background process (PID ${pid}) exited after startup${
+        raceResult.code !== null ? ` with exit code ${raceResult.code}` : ''
+      }. Server may have failed to start properly.`
+    );
+  }
+
+  log(`Background process (PID ${pid}) is healthy and running.`);
+};
+
 const monitorBackgroundStart = async (
   pid: number,
   childExit: Promise<number | null>,
@@ -535,12 +583,14 @@ const generateServerConfigFromJob = (job: DeployBuildJob): ServerConfig => {
   } else if (job.engine === 'node') {
     config.command = 'npm';
     config.args = ['start'];
+    config.cwd = job.installDir;
     config.env = {
       ...(job.selectedPort ? { PORT: String(job.selectedPort) } : {}),
     };
   } else if (job.engine === 'python') {
     config.command = 'python3';
     config.args = ['-m', 'mcp', 'run', job.serverName];
+    config.cwd = job.installDir;
     config.env = {
       ...(job.selectedPort ? { PORT: String(job.selectedPort) } : {}),
     };
@@ -762,6 +812,11 @@ export const executeDeployBuildJob = async (jobId: string): Promise<void> => {
           currentJob = addLogLine(currentJob, line);
           void persist(currentJob);
         });
+        // Perform additional health check after grace period to catch early crashes
+        await verifyBackgroundHealthAfterStart(background.pid, background.exited, (line) => {
+          currentJob = addLogLine(currentJob, line);
+          void persist(currentJob);
+        });
         const pid = background.pid;
         currentJob = addLogLine(currentJob, `Background process started with pid ${pid}.`);
         currentJob = { ...currentJob, processPid: pid, updatedAt: new Date().toISOString() };
@@ -808,13 +863,41 @@ export const executeDeployBuildJob = async (jobId: string): Promise<void> => {
     }
     await persist(currentJob);
   } catch (error) {
-    currentJob = addLogLine(currentJob, `Installation failed: ${error instanceof Error ? error.message : String(error)}`);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    currentJob = addLogLine(currentJob, `Installation failed: ${errorMessage}`);
+    
+    // Classify error based on message content
+    let errorStatus: DeployBuildStatus = 'failed';
+    
+    if (errorMessage.includes('command not found') || errorMessage.includes('ENOENT')) {
+      errorStatus = 'prerequisite_error';
+      currentJob = addLogLine(currentJob, 'ERROR_TYPE: Missing prerequisite (git, npm, python, docker, etc.)');
+    } else if (errorMessage.includes('fatal:') || errorMessage.includes('clone') || errorMessage.includes('repository')) {
+      errorStatus = 'clone_error';
+      currentJob = addLogLine(currentJob, 'ERROR_TYPE: Failed to clone repository');
+    } else if (errorMessage.includes('npm install') || errorMessage.includes('pip install') || errorMessage.includes('poetry install')) {
+      errorStatus = 'install_error';
+      currentJob = addLogLine(currentJob, 'ERROR_TYPE: Dependency installation failed');
+    } else if (errorMessage.includes('build') || errorMessage.includes('compile') || errorMessage.includes('tsc')) {
+      errorStatus = 'build_error';
+      currentJob = addLogLine(currentJob, 'ERROR_TYPE: Build/compile step failed');
+    } else if (errorMessage.includes('EADDRINUSE') || errorMessage.includes('port') || errorMessage.includes('already in use')) {
+      errorStatus = 'port_error';
+      currentJob = addLogLine(currentJob, 'ERROR_TYPE: Port already in use');
+    } else if (errorMessage.includes('exited after startup') || errorMessage.includes('Background process') || errorMessage.includes('startup')) {
+      errorStatus = 'startup_error';
+      currentJob = addLogLine(currentJob, 'ERROR_TYPE: Process crashed during startup');
+    } else if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('ENOTFOUND') || errorMessage.includes('ETIMEDOUT') || errorMessage.includes('network')) {
+      errorStatus = 'network_error';
+      currentJob = addLogLine(currentJob, 'ERROR_TYPE: Network error (DNS, connection, timeout)');
+    }
+    
     currentJob = {
       ...currentJob,
-      status: 'failed',
+      status: errorStatus,
       updatedAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage,
     };
     await persist(currentJob);
   }
