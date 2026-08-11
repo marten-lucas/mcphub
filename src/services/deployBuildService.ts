@@ -4,8 +4,11 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import net from 'node:net';
 import axios from 'axios';
+import { Repository } from 'typeorm';
 import { addOrUpdateServer, removeServer } from './mcpService.js';
 import type { ServerConfig } from '../types/index.js';
+import { getAppDataSource } from '../db/connection.js';
+import DeployBuildJobEntity from '../db/entities/DeployBuildJob.js';
 
 export type DeployBuildStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'deleting' | 'deinstalled';
 
@@ -77,13 +80,16 @@ interface DeployBuildRequest extends PreviewInstallInput {
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 const JOBS_FILE = path.join(DATA_DIR, 'deploy-build-jobs.json');
-const INSTALL_ROOT = path.resolve('/tmp', 'mcphub-deploy-builds');
+const INSTALL_ROOT = path.resolve(process.env.MCPHUB_DEPLOY_BUILD_ROOT || '/var/lib/mcphub/deploy-builds');
 const MAX_LOG_LINES = 200;
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 const SUSPECT_COMMAND_PATTERN = /(?:^|\s)(?:sudo|su|sh|bash|zsh|fish|cmd|powershell|pwsh|eval|exec|source|\.)(?:$|\s)/i;
 const SUSPECT_ARG_PATTERN = /[;&|`$<>]/;
 const SENSITIVE_VALUE_PATTERN = /(token|secret|password|authorization)=([^,\s]+)/gi;
 const BEARER_PATTERN = /\b(Bearer)\s+([A-Za-z0-9._-]+)/gi;
+
+const isDatabaseMode = (): boolean =>
+  process.env.USE_DB !== undefined ? process.env.USE_DB === 'true' : Boolean(process.env.DB_URL);
 
 const ensureStorage = async (): Promise<void> => {
   await fs.mkdir(DATA_DIR, { recursive: true });
@@ -95,13 +101,113 @@ const ensureStorage = async (): Promise<void> => {
   }
 };
 
-const readJobs = async (): Promise<DeployBuildJob[]> => {
+const getDeployJobRepository = (): Repository<DeployBuildJobEntity> =>
+  getAppDataSource().getRepository(DeployBuildJobEntity);
+
+const mapEntityToJob = (entity: DeployBuildJobEntity): DeployBuildJob => ({
+  id: entity.id,
+  repositoryUrl: entity.repositoryUrl,
+  serverName: entity.serverName,
+  version: entity.version ?? undefined,
+  status: entity.status as DeployBuildStatus,
+  createdAt: entity.createdAt instanceof Date ? entity.createdAt.toISOString() : new Date(entity.createdAt).toISOString(),
+  updatedAt: entity.updatedAt instanceof Date ? entity.updatedAt.toISOString() : new Date(entity.updatedAt).toISOString(),
+  startedAt: entity.startedAt ? new Date(entity.startedAt).toISOString() : undefined,
+  completedAt: entity.completedAt ? new Date(entity.completedAt).toISOString() : undefined,
+  installRoot: entity.installRoot,
+  installDir: entity.installDir,
+  engine: entity.engine,
+  plan: entity.plan as unknown as DeployBuildPlan,
+  processPid: entity.processPid ?? undefined,
+  logs: Array.isArray(entity.logs) ? entity.logs : [],
+  error: entity.error ?? undefined,
+  selectedPort: entity.selectedPort ?? undefined,
+});
+
+const mapJobToEntity = (job: DeployBuildJob): DeployBuildJobEntity =>
+  Object.assign(new DeployBuildJobEntity(), {
+    id: job.id,
+    repositoryUrl: job.repositoryUrl,
+    serverName: job.serverName,
+    version: job.version ?? null,
+    status: job.status,
+    createdAt: new Date(job.createdAt),
+    updatedAt: new Date(job.updatedAt),
+    startedAt: job.startedAt ? new Date(job.startedAt) : null,
+    completedAt: job.completedAt ? new Date(job.completedAt) : null,
+    installRoot: job.installRoot,
+    installDir: job.installDir,
+    engine: job.engine,
+    plan: job.plan,
+    processPid: job.processPid ?? null,
+    logs: job.logs,
+    error: job.error ?? null,
+    selectedPort: job.selectedPort ?? null,
+  });
+
+const loadJobs = async (): Promise<DeployBuildJob[]> => {
+  if (isDatabaseMode()) {
+    const jobs = await getDeployJobRepository().find({ order: { updatedAt: 'DESC' } });
+    return jobs.map(mapEntityToJob);
+  }
+
   await ensureStorage();
   const raw = await fs.readFile(JOBS_FILE, 'utf8');
   return JSON.parse(raw) as DeployBuildJob[];
 };
 
+const persistJob = async (job: DeployBuildJob): Promise<void> => {
+  if (isDatabaseMode()) {
+    await getDeployJobRepository().save(mapJobToEntity(job));
+    return;
+  }
+
+  const jobs = await loadJobs();
+  const nextJobs = jobs.some((entry) => entry.id === job.id)
+    ? jobs.map((entry) => (entry.id === job.id ? job : entry))
+    : [...jobs, job];
+  await ensureStorage();
+  await fs.writeFile(JOBS_FILE, JSON.stringify(nextJobs, null, 2), 'utf8');
+};
+
+const updateJob = async (
+  jobId: string,
+  updater: (job: DeployBuildJob) => DeployBuildJob,
+): Promise<DeployBuildJob | null> => {
+  const job = await getDeployBuildJob(jobId);
+  if (!job) {
+    return null;
+  }
+
+  const nextJob = updater(job);
+  await persistJob(nextJob);
+  return nextJob;
+};
+
+const preflightInstallDirectory = async (
+  installDir: string,
+  log: (line: string) => void,
+): Promise<void> => {
+  try {
+    await fs.access(installDir);
+    log(`Target folder exists and will be deleted before deploy: ${installDir}`);
+  } catch {
+    log(`Target folder does not exist yet: ${installDir}`);
+  }
+
+  await fs.mkdir(path.dirname(installDir), { recursive: true });
+};
+
+const readJobs = async (): Promise<DeployBuildJob[]> => {
+  return loadJobs();
+};
+
 const writeJobs = async (jobs: DeployBuildJob[]): Promise<void> => {
+  if (isDatabaseMode()) {
+    await Promise.all(jobs.map((job) => persistJob(job)));
+    return;
+  }
+
   await ensureStorage();
   await fs.writeFile(JOBS_FILE, JSON.stringify(jobs, null, 2), 'utf8');
 };
@@ -440,9 +546,7 @@ export const createDeployBuildJob = async (input: DeployBuildRequest): Promise<D
     plan,
     logs: ['Installation job created.'],
   };
-  const jobs = await readJobs();
-  jobs.push(job);
-  await writeJobs(jobs);
+  await persistJob(job);
   return job;
 };
 
@@ -456,27 +560,17 @@ export const getDeployBuildJob = async (jobId: string): Promise<DeployBuildJob |
 };
 
 export const retryDeployBuildJob = async (jobId: string): Promise<DeployBuildJob | null> => {
-  const jobs = await readJobs();
-  const job = jobs.find((entry) => entry.id === jobId);
-  if (!job) {
-    return null;
-  }
-
-  const retried: DeployBuildJob = {
+  return updateJob(jobId, (job) => ({
     ...job,
     status: 'queued',
     updatedAt: new Date().toISOString(),
     error: undefined,
     logs: [...job.logs, 'Retry requested.'],
-  };
-  const nextJobs = jobs.map((entry) => (entry.id === jobId ? retried : entry));
-  await writeJobs(nextJobs);
-  return retried;
+  }));
 };
 
 export const registerServerFromInstall = async (jobId: string): Promise<boolean> => {
-  const jobs = await readJobs();
-  const job = jobs.find((entry) => entry.id === jobId);
+  const job = await getDeployBuildJob(jobId);
   if (!job || job.status !== 'succeeded') {
     return false;
   }
@@ -485,13 +579,11 @@ export const registerServerFromInstall = async (jobId: string): Promise<boolean>
     const serverConfig = generateServerConfigFromJob(job);
     const result = await addOrUpdateServer(job.serverName, serverConfig, true);
     if (result.success) {
-      const nextJob = {
+      await persistJob({
         ...job,
         updatedAt: new Date().toISOString(),
         logs: [...job.logs, `Server '${job.serverName}' registered successfully.`],
-      };
-      const nextJobs = jobs.map((entry) => (entry.id === jobId ? nextJob : entry));
-      await writeJobs(nextJobs);
+      });
       return true;
     }
   } catch (error) {
@@ -501,8 +593,7 @@ export const registerServerFromInstall = async (jobId: string): Promise<boolean>
 };
 
 export const deinstallDeployBuildJob = async (jobId: string): Promise<DeployBuildJob | null> => {
-  const jobs = await readJobs();
-  const job = jobs.find((entry) => entry.id === jobId);
+  const job = await getDeployBuildJob(jobId);
   if (!job) {
     return null;
   }
@@ -513,68 +604,53 @@ export const deinstallDeployBuildJob = async (jobId: string): Promise<DeployBuil
     updatedAt: new Date().toISOString(),
     logs: [...job.logs, 'Starting deinstallation.'],
   };
-  const nextJobs = jobs.map((entry) => (entry.id === jobId ? nextJob : entry));
-  await writeJobs(nextJobs);
+  await persistJob(nextJob);
 
   try {
     // Remove server from MCP registry if it was successfully registered
     if (job.status === 'succeeded') {
       try {
         await removeServer(job.serverName);
-        const currentJob = (await readJobs()).find((entry) => entry.id === jobId);
-        if (currentJob) {
-          const updatedJob = addLogLine(currentJob, `Removed server '${job.serverName}' from registry.`);
-          const updatedJobs = (await readJobs()).map((entry) => (entry.id === jobId ? updatedJob : entry));
-          await writeJobs(updatedJobs);
-        }
+        await updateJob(jobId, (currentJob) =>
+          addLogLine(currentJob, `Removed server '${job.serverName}' from registry.`),
+        );
       } catch (serverError) {
-        const currentJob = (await readJobs()).find((entry) => entry.id === jobId);
-        if (currentJob) {
-          const warnedJob = addLogLine(
+        await updateJob(jobId, (currentJob) =>
+          addLogLine(
             currentJob,
             `Warning: Failed to remove server from registry: ${serverError instanceof Error ? serverError.message : String(serverError)}`,
-          );
-          const warnedJobs = (await readJobs()).map((entry) => (entry.id === jobId ? warnedJob : entry));
-          await writeJobs(warnedJobs);
-        }
+          ),
+        );
       }
     }
 
     await fs.rm(nextJob.installDir, { recursive: true, force: true });
-    const finalizedJob: DeployBuildJob = {
-      ...nextJob,
+    return updateJob(jobId, (currentJob) => ({
+      ...currentJob,
       status: 'deinstalled',
       updatedAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
-      logs: [...(await readJobs()).find((entry) => entry.id === jobId)?.logs || [], `Removed install directory ${nextJob.installDir}.`],
-    };
-    const finalJobs = (await readJobs()).map((entry) => (entry.id === jobId ? finalizedJob : entry));
-    await writeJobs(finalJobs);
-    return finalizedJob;
+      logs: [...currentJob.logs, `Removed install directory ${nextJob.installDir}.`],
+    }));
   } catch (error) {
-    const failedJob: DeployBuildJob = {
-      ...nextJob,
+    return updateJob(jobId, (currentJob) => ({
+      ...currentJob,
       status: 'failed',
       updatedAt: new Date().toISOString(),
       error: error instanceof Error ? error.message : String(error),
-      logs: [...(await readJobs()).find((entry) => entry.id === jobId)?.logs || [], `Deinstallation failed: ${error instanceof Error ? error.message : String(error)}`],
-    };
-    const finalJobs = (await readJobs()).map((entry) => (entry.id === jobId ? failedJob : entry));
-    await writeJobs(finalJobs);
-    return failedJob;
+      logs: [...currentJob.logs, `Deinstallation failed: ${error instanceof Error ? error.message : String(error)}`],
+    }));
   }
 };
 
 export const executeDeployBuildJob = async (jobId: string): Promise<void> => {
-  const jobs = await readJobs();
-  const job = jobs.find((entry) => entry.id === jobId);
+  const job = await getDeployBuildJob(jobId);
   if (!job) {
     return;
   }
 
   const persist = async (nextJob: DeployBuildJob): Promise<void> => {
-    const nextJobs = jobs.map((entry) => (entry.id === jobId ? nextJob : entry));
-    await writeJobs(nextJobs);
+    await persistJob(nextJob);
   };
 
   let currentJob: DeployBuildJob = {
@@ -607,6 +683,11 @@ export const executeDeployBuildJob = async (jobId: string): Promise<void> => {
 
     currentJob = addLogLine(currentJob, `Using install root ${currentJob.installDir}`);
     await persist(currentJob);
+
+    await preflightInstallDirectory(currentJob.installDir, (line) => {
+      currentJob = addLogLine(currentJob, line);
+      void persist(currentJob);
+    });
 
     await fs.rm(currentJob.installDir, { recursive: true, force: true });
     await fs.mkdir(path.dirname(currentJob.installDir), { recursive: true });
@@ -686,6 +767,10 @@ export const executeDeployBuildJob = async (jobId: string): Promise<void> => {
     currentJob = addLogLine(currentJob, `Registering server '${currentJob.serverName}' with MCP hub...`);
     await persist(currentJob);
     const registered = await registerServerFromInstall(jobId);
+    const persistedJob = await getDeployBuildJob(jobId);
+    if (persistedJob) {
+      currentJob = persistedJob;
+    }
     if (registered) {
       currentJob = addLogLine(currentJob, `Server '${currentJob.serverName}' registered and ready to use.`);
     } else {

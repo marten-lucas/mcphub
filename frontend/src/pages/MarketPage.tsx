@@ -116,6 +116,7 @@ const MarketPage: React.FC = () => {
   const [deployBuildSelectedJob, setDeployBuildSelectedJob] = useState<any>(null);
   const [deployBuildConfirmOpen, setDeployBuildConfirmOpen] = useState(false);
   const [deployBuildConfirmPlan, setDeployBuildConfirmPlan] = useState<any>(null);
+  const [deployBuildDeleteAck, setDeployBuildDeleteAck] = useState(false);
   const [installedCloudServers, setInstalledCloudServers] = useState<Set<string>>(new Set());
   const [installedRegistryServers, setInstalledRegistryServers] = useState<Set<string>>(new Set());
   const [addCustomRepoModalOpen, setAddCustomRepoModalOpen] = useState(false);
@@ -248,7 +249,7 @@ const MarketPage: React.FC = () => {
 
   const deriveDeployBuildTargetDir = (server: string) => {
     const normalizedName = server.trim() || 'deployment';
-    return `/tmp/mcphub-deploy-builds/${normalizedName}`;
+    return `/var/lib/mcphub/deploy-builds/${normalizedName}`;
   };
 
   const parentDir = (targetDir: string) => {
@@ -308,6 +309,7 @@ const MarketPage: React.FC = () => {
     setDeployBuildSelectedJob(null);
     setDeployBuildConfirmOpen(false);
     setDeployBuildConfirmPlan(null);
+    setDeployBuildDeleteAck(false);
     setDeployBuildOpen(true);
   };
 
@@ -384,6 +386,7 @@ const MarketPage: React.FC = () => {
   const handleDeployBuildTargetDirChange = (value: string) => {
     setDeployBuildTargetDir(value);
     setDeployBuildTargetDirTouched(true);
+    setDeployBuildDeleteAck(false);
   };
 
   const handleLocalInstall = async (server: MarketServer, config: ServerConfig) => {
@@ -537,6 +540,7 @@ const MarketPage: React.FC = () => {
     setDeployBuildSelectedJob(null);
     setDeployBuildConfirmOpen(false);
     setDeployBuildConfirmPlan(null);
+    setDeployBuildDeleteAck(false);
   }, []);
 
   const handleDeployBuildSubmit = async (e: React.FormEvent) => {
@@ -585,6 +589,7 @@ const MarketPage: React.FC = () => {
       // Show confirmation dialog instead of starting immediately
       setDeployBuildConfirmPlan(nextPlan);
       setDeployBuildConfirmOpen(true);
+      setDeployBuildDeleteAck(false);
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Failed to preview installation', 'error');
     } finally {
@@ -621,6 +626,7 @@ const MarketPage: React.FC = () => {
       showToast(`Deployment started for ${deployBuildConfirmPlan.serverName}.`, 'success');
       setDeployBuildConfirmOpen(false);
       setDeployBuildConfirmPlan(null);
+      setDeployBuildDeleteAck(false);
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Failed to start deployment', 'error');
     } finally {
@@ -684,6 +690,7 @@ const MarketPage: React.FC = () => {
         submitting={deployBuildSubmitting}
         confirmOpen={deployBuildConfirmOpen}
         confirmPlan={deployBuildConfirmPlan}
+        destructiveAck={deployBuildDeleteAck}
         jobs={deployBuildJobs}
         selectedJob={deployBuildSelectedJob}
         selectedJobId={deployBuildSelectedJobId}
@@ -695,9 +702,11 @@ const MarketPage: React.FC = () => {
         onPlanDraftJsonChange={setDeployBuildPlanDraftJson}
         onSubmit={handleDeployBuildSubmit}
         onConfirm={handleDeployBuildConfirm}
+        onDestructiveAckChange={setDeployBuildDeleteAck}
         onCancelConfirm={() => {
           setDeployBuildConfirmOpen(false);
           setDeployBuildConfirmPlan(null);
+          setDeployBuildDeleteAck(false);
         }}
         onOpenJob={(jobId) => void handleOpenDeployBuildJob(jobId)}
         onRetryJob={(jobId) => void handleRetryDeployBuildJob(jobId)}

@@ -33,6 +33,7 @@ interface DeployWizardSidepaneProps {
   submitting: boolean;
   confirmOpen: boolean;
   confirmPlan: WizardPlan | null;
+  destructiveAck: boolean;
   jobs: WizardJob[];
   selectedJob: WizardJob | null;
   selectedJobId: string | null;
@@ -45,6 +46,7 @@ interface DeployWizardSidepaneProps {
   onSubmit: (e: React.FormEvent) => void;
   onConfirm: () => void;
   onCancelConfirm: () => void;
+  onDestructiveAckChange?: (value: boolean) => void;
   onOpenJob: (jobId: string) => void;
   onRetryJob: (jobId: string) => void;
   onDeinstallJob: (jobId: string) => void;
@@ -61,6 +63,7 @@ const DeployWizardSidepane: React.FC<DeployWizardSidepaneProps> = ({
   submitting,
   confirmOpen,
   confirmPlan,
+  destructiveAck,
   jobs,
   selectedJob,
   selectedJobId,
@@ -73,6 +76,7 @@ const DeployWizardSidepane: React.FC<DeployWizardSidepaneProps> = ({
   onSubmit,
   onConfirm,
   onCancelConfirm,
+  onDestructiveAckChange,
   onOpenJob,
   onRetryJob,
   onDeinstallJob,
@@ -229,10 +233,10 @@ const DeployWizardSidepane: React.FC<DeployWizardSidepaneProps> = ({
                   className="hub-input mt-1 w-full font-mono text-xs"
                   value={targetDir}
                   onChange={(e) => onTargetDirChange(e.target.value)}
-                  placeholder="/tmp/mcphub-deploy-builds/technitium-mcp-secure"
+                  placeholder="/var/lib/mcphub/deploy-builds/technitium-mcp-secure"
                 />
                 <p className="mt-1 text-[11px] text-[var(--hub-ink-3)]">
-                  Recommended: /tmp/mcphub-deploy-builds/&lt;repo-name&gt;
+                  Recommended: /var/lib/mcphub/deploy-builds/&lt;repo-name&gt; (persistent)
                 </p>
               </label>
 
@@ -280,9 +284,35 @@ const DeployWizardSidepane: React.FC<DeployWizardSidepaneProps> = ({
                 <button type="button" className="hub-btn ghost" onClick={onCancelConfirm}>
                   Clear
                 </button>
-                <button type="button" className="hub-btn primary" onClick={onConfirm} disabled={submitting || !preview}>
+                <button
+                  type="button"
+                  className="hub-btn primary"
+                  onClick={onConfirm}
+                  disabled={submitting || !preview || !destructiveAck}
+                >
                   {submitting ? 'Deploying…' : 'Deploy'}
                 </button>
+              </div>
+              <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
+                  <div className="space-y-2">
+                    <p className="font-medium">
+                      This deploy will delete the target folder before cloning.
+                    </p>
+                    <label className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={destructiveAck}
+                        onChange={(e) => onDestructiveAckChange?.(e.target.checked)}
+                      />
+                      <span>
+                        I understand that <span className="font-mono">{targetDir}</span> will be removed and recreated.
+                      </span>
+                    </label>
+                  </div>
+                </div>
               </div>
               <div className="border-t border-[var(--hub-line)] pt-4">
                 <div className="mb-3 flex items-center justify-between gap-2">

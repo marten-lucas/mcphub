@@ -10,6 +10,7 @@ import BearerKey from './BearerKey.js';
 import Activity from './Activity.js';
 import BuiltinPrompt from './BuiltinPrompt.js';
 import BuiltinResource from './BuiltinResource.js';
+import DeployBuildJob from './DeployBuildJob.js';
 
 // Export all entities
 export default [
@@ -25,6 +26,7 @@ export default [
   Activity,
   BuiltinPrompt,
   BuiltinResource,
+  DeployBuildJob,
 ];
 
 // Export individual entities for direct use
@@ -41,4 +43,5 @@ export {
   Activity,
   BuiltinPrompt,
   BuiltinResource,
+  DeployBuildJob,
 };

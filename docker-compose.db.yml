@@ -35,6 +35,7 @@ services:
       # Application settings
       PORT: 3000
       BASE_PATH: /market
+      MCPHUB_DEPLOY_BUILD_ROOT: /var/lib/mcphub/deploy-builds
       NODE_ENV: production
       JWT_SECRET: ${JWT_SECRET}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
@@ -53,11 +54,14 @@ services:
     restart: unless-stopped
     volumes:
       - ./custom-servers.json:/app/custom-servers.json
+      - deploy-builds:/var/lib/mcphub/deploy-builds
     networks:
       - mcphub-network
 
 volumes:
   pgdata:
+    driver: local
+  deploy-builds:
     driver: local
 
 networks:
