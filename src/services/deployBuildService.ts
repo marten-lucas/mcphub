@@ -721,7 +721,9 @@ export const executeDeployBuildJob = async (jobId: string): Promise<void> => {
     };
 
     for (const step of currentJob.plan.steps) {
-      if (!step.command) continue;
+      if (!step.command || step.id === 'clone') {
+        continue;
+      }
       if (step.background) {
         currentJob = addLogLine(currentJob, `Starting background process: ${step.title}`);
         await persist(currentJob);
