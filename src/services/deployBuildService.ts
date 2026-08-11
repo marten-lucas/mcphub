@@ -77,7 +77,7 @@ interface DeployBuildRequest extends PreviewInstallInput {
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 const JOBS_FILE = path.join(DATA_DIR, 'deploy-build-jobs.json');
-const INSTALL_ROOT = path.resolve(process.cwd(), 'data', 'deploy-builds');
+const INSTALL_ROOT = path.resolve('/tmp', 'mcphub-deploy-builds');
 const MAX_LOG_LINES = 200;
 const DEFAULT_TIMEOUT_MS = 30 * 60 * 1000;
 const SUSPECT_COMMAND_PATTERN = /(?:^|\s)(?:sudo|su|sh|bash|zsh|fish|cmd|powershell|pwsh|eval|exec|source|\.)(?:$|\s)/i;
