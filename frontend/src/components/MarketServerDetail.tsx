@@ -16,6 +16,7 @@ interface MarketServerDetailProps {
   onInstall: (server: MarketServer, config: ServerConfig) => void;
   installLabel?: string;
   canInstall?: boolean;
+  installConfig?: ServerConfig;
   installing?: boolean;
   isInstalled?: boolean;
   onDelete?: (serverName: string) => void;
@@ -36,6 +37,7 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
   onInstall,
   installLabel = 'Install',
   canInstall = true,
+  installConfig,
   installing = false,
   isInstalled = false,
   onDelete,
@@ -602,13 +604,13 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
             initialData={{
               name: server.name,
               status: 'disconnected',
-              config: preferredInstallation
+              config: installConfig || (preferredInstallation
                 ? {
                     command: preferredInstallation.command || '',
                     args: preferredInstallation.args || [],
                     env: preferredInstallation.env || {},
                   }
-                : undefined,
+                : undefined),
             }}
           />
         </div>

@@ -759,6 +759,35 @@ const MarketPage: React.FC = () => {
     (job) => job.status === 'succeeded',
   );
 
+  const latestSuccessfulBuildForSelectedServer = deployBuildJobs.find(
+    (job) => job.status === 'succeeded',
+  );
+
+  const installConfigFromLatestBuild = latestSuccessfulBuildForSelectedServer
+    ? (() => {
+        const detectedParts = latestSuccessfulBuildForSelectedServer.detectedStartCommand
+          ? latestSuccessfulBuildForSelectedServer.detectedStartCommand.trim().split(/\s+/)
+          : [];
+        const command = detectedParts[0] || (latestSuccessfulBuildForSelectedServer.engine === 'python' ? 'python3' : 'node');
+        const args = detectedParts.length > 1
+          ? detectedParts.slice(1)
+          : latestSuccessfulBuildForSelectedServer.engine === 'python'
+            ? ['main.py']
+            : ['index.js'];
+        const cwd = latestSuccessfulBuildForSelectedServer.subdir
+          ? `${latestSuccessfulBuildForSelectedServer.installDir}/${latestSuccessfulBuildForSelectedServer.subdir}`
+          : latestSuccessfulBuildForSelectedServer.installDir;
+
+        return {
+          type: 'stdio' as const,
+          command,
+          args,
+          cwd,
+          env: {},
+        };
+      })()
+    : undefined;
+
   const showInlineDeploy = Boolean(
     selectedServer && currentTab === 'local' && isCustomMarketServer(selectedServer),
   );
@@ -783,6 +812,7 @@ const MarketPage: React.FC = () => {
           onInstall={handleLocalInstall}
           installLabel={showInlineDeploy ? 'Install' : undefined}
           canInstall={!showInlineDeploy || hasSuccessfulBuildForSelectedServer}
+          installConfig={showInlineDeploy ? installConfigFromLatestBuild : undefined}
           installing={installing}
           isInstalled={isServerInstalled(selectedServer.name)}
           variants={localVariants}
