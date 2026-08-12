@@ -96,6 +96,16 @@ const BEARER_PATTERN = /\b(Bearer)\s+([A-Za-z0-9._-]+)/gi;
 const isDatabaseMode = (): boolean =>
   process.env.USE_DB !== undefined ? process.env.USE_DB === 'true' : Boolean(process.env.DB_URL);
 
+// Serialize all file writes through a per-job queue to prevent concurrent write corruption
+const writeQueues = new Map<string, Promise<void>>();
+
+const enqueueWrite = (jobId: string, write: () => Promise<void>): Promise<void> => {
+  const prev = writeQueues.get(jobId) ?? Promise.resolve();
+  const next = prev.then(write).catch(() => write()); // retry once on failure
+  writeQueues.set(jobId, next);
+  return next;
+};
+
 const ensureStorage = async (): Promise<void> => {
   await fs.mkdir(DATA_DIR, { recursive: true });
   await fs.mkdir(INSTALL_ROOT, { recursive: true });
@@ -163,12 +173,14 @@ const persistJob = async (job: DeployBuildJob): Promise<void> => {
     return;
   }
 
-  const jobs = await loadJobs();
-  const nextJobs = jobs.some((entry) => entry.id === job.id)
-    ? jobs.map((entry) => (entry.id === job.id ? job : entry))
-    : [...jobs, job];
-  await ensureStorage();
-  await fs.writeFile(JOBS_FILE, JSON.stringify(nextJobs, null, 2), 'utf8');
+  return enqueueWrite(job.id, async () => {
+    const jobs = await loadJobs();
+    const nextJobs = jobs.some((entry) => entry.id === job.id)
+      ? jobs.map((entry) => (entry.id === job.id ? job : entry))
+      : [...jobs, job];
+    await ensureStorage();
+    await fs.writeFile(JOBS_FILE, JSON.stringify(nextJobs, null, 2), 'utf8');
+  });
 };
 
 const updateJob = async (
