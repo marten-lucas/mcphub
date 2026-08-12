@@ -12,6 +12,7 @@ interface AddCustomRepoModalProps {
     name: string;
     repository?: {
       url?: string;
+      subdir?: string;
     };
     tags?: string[];
     version?: string;
@@ -29,6 +30,7 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
 
   const [repositoryUrl, setRepositoryUrl] = useState('');
   const [serverName, setServerName] = useState('');
+  const [subdirInput, setSubdirInput] = useState('');
   const [versionInput, setVersionInput] = useState('latest');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +38,7 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
   const resetForm = () => {
     setRepositoryUrl('');
     setServerName('');
+    setSubdirInput('');
     setVersionInput('latest');
     setError(null);
   };
@@ -90,6 +93,7 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
       const derivedVersion = initialServer.version || deriveVersionFromRepositoryUrl(repoUrl);
       setRepositoryUrl(repoUrl);
       setServerName(initialServer.name || '');
+      setSubdirInput(initialServer.repository?.subdir || '');
       setVersionInput(derivedVersion || 'latest');
       setError(null);
       return;
@@ -110,6 +114,7 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
       }
 
       const resolvedVersion = versionInput.trim() || 'latest';
+      const resolvedSubdir = subdirInput.trim();
 
       try {
         new URL(repositoryUrl);
@@ -123,6 +128,7 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
           newServerName: serverName.trim(),
           repositoryUrl,
           version: resolvedVersion,
+          subdir: resolvedSubdir || undefined,
         });
 
         if (result.success) {
@@ -138,6 +144,7 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
           serverName: serverName.trim(),
           repositoryUrl,
           version: resolvedVersion,
+          subdir: resolvedSubdir || undefined,
         });
 
         if (result.success) {
@@ -239,6 +246,21 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
               disabled={loading}
               required
             />
+          </label>
+
+          <label className="block">
+            <span className="text-sm font-medium">Subdirectory (optional)</span>
+            <input
+              className="hub-input mt-1 w-full"
+              type="text"
+              value={subdirInput}
+              onChange={(e) => setSubdirInput(e.target.value)}
+              placeholder="packages/my-server or apps/diagnostic"
+              disabled={loading}
+            />
+            <span className="mt-1 block text-xs text-[var(--hub-ink-3)]">
+              Leave empty for repo root. Useful for monorepos and multi-server repos.
+            </span>
           </label>
 
           <label className="block">

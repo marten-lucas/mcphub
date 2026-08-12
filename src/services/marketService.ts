@@ -159,6 +159,7 @@ export const registerCustomServer = (
   repositoryUrl: string,
   tags: string[] = [],
   version?: string,
+  subdir?: string,
 ): MarketServer => {
   const customServers = getCustomServers();
   const resolvedTags = ensureCustomTag(tags.length > 0 ? tags : deriveTagsFromRepositoryUrl(repositoryUrl));
@@ -172,6 +173,7 @@ export const registerCustomServer = (
     repository: {
       type: 'git-repository',
       url: repositoryUrl,
+      subdir: subdir || undefined,
     },
     homepage: repositoryUrl,
     author: { name: deriveGitHubOwnerFromRepositoryUrl(repositoryUrl) || 'User' },
@@ -204,6 +206,7 @@ export const updateCustomServer = (
     newServerName?: string;
     tags?: string[];
     version?: string;
+    subdir?: string;
   }
 ): MarketServer => {
   const customServers = getCustomServers();
@@ -229,12 +232,29 @@ export const updateCustomServer = (
     server.repository = {
       type: 'git-repository',
       url: updates.repositoryUrl,
+      subdir: typeof updates.subdir === 'string' && updates.subdir.trim() ? updates.subdir.trim() : server.repository?.subdir,
     };
     server.homepage = updates.repositoryUrl;
     server.description = `Custom MCP server from ${updates.repositoryUrl}`;
     const githubOwner = deriveGitHubOwnerFromRepositoryUrl(updates.repositoryUrl);
     if (githubOwner) {
       server.author = { name: githubOwner };
+    }
+  } else if (typeof updates.subdir === 'string') {
+    server.repository = {
+      ...server.repository,
+      type: server.repository?.type || 'git-repository',
+      url: server.repository?.url || '',
+      subdir: updates.subdir.trim() || undefined,
+    };
+  }
+
+  if (typeof updates.subdir === 'string') {
+    const normalizedSubdir = updates.subdir.trim();
+    if (!server.repository) {
+      server.repository = { type: 'git-repository', url: '', subdir: normalizedSubdir || undefined };
+    } else {
+      server.repository.subdir = normalizedSubdir || undefined;
     }
   }
 

@@ -44,9 +44,6 @@ export class DeployBuildJob {
   @Column({ type: 'simple-json' })
   plan: Record<string, unknown>;
 
-  @Column({ type: 'int', name: 'process_pid', nullable: true })
-  processPid?: number;
-
   @Column({ type: 'simple-json' })
   logs: string[];
 
@@ -55,6 +52,12 @@ export class DeployBuildJob {
 
   @Column({ type: 'int', name: 'selected_port', nullable: true })
   selectedPort?: number;
+
+  @Column({ type: 'varchar', length: 512, name: 'detected_start_command', nullable: true })
+  detectedStartCommand?: string;
+
+  @Column({ type: 'varchar', length: 255, name: 'subdir', nullable: true })
+  subdir?: string;
 }
 
 export default DeployBuildJob;

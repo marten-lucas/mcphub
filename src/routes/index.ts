@@ -384,6 +384,14 @@ export const initRoutes = async (app: express.Application): Promise<void> => {
   authenticatedRouter.post('/market/custom-servers', registerCustomMarketServer);
   authenticatedRouter.put('/market/custom-servers/:serverName', updateCustomMarketServer);
   authenticatedRouter.delete('/market/custom-servers/:serverName', deleteCustomMarketServer);
+  authenticatedRouter.post('/market/build-runs/preview', previewDeployBuildHandler);
+  authenticatedRouter.post('/market/build-runs', createDeployBuildHandler);
+  authenticatedRouter.get('/market/build-runs', listDeployBuildJobsHandler);
+  authenticatedRouter.get('/market/build-runs/:runId', getDeployBuildJobHandler);
+  authenticatedRouter.post('/market/build-runs/:runId/retry', retryDeployBuildHandler);
+  authenticatedRouter.delete('/market/build-runs/:runId', deinstallDeployBuildHandler);
+
+  // Backwards-compatible legacy routes
   authenticatedRouter.post('/market/deploy/preview', previewDeployBuildHandler);
   authenticatedRouter.post('/market/deploy', createDeployBuildHandler);
   authenticatedRouter.get('/market/deploy/jobs', listDeployBuildJobsHandler);

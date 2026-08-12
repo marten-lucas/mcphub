@@ -21,11 +21,12 @@ import CloudServerCard from '@/components/CloudServerCard';
 import CloudServerDetail from '@/components/CloudServerDetail';
 import RegistryServerCard from '@/components/RegistryServerCard';
 import RegistryServerDetail from '@/components/RegistryServerDetail';
-import DeployWizardSidepane from '@/components/DeployWizardSidepane';
+import CustomBuildRunSidepane from '@/components/custom/CustomBuildRunSidepane';
 import MCPRouterApiKeyError from '@/components/MCPRouterApiKeyError';
 import AddCustomRepoModal from '@/components/AddCustomRepoModal';
 import Pagination from '@/components/ui/Pagination';
 import CursorPagination from '@/components/ui/CursorPagination';
+import { useCustomBuildRuns } from '@/hooks/useCustomBuildRuns';
 
 const MarketPage: React.FC = () => {
   const { t } = useTranslation();
@@ -112,12 +113,20 @@ const MarketPage: React.FC = () => {
   const [deployBuildPreview, setDeployBuildPreview] = useState<any>(null);
   const [deployBuildPlanDraftJson, setDeployBuildPlanDraftJson] = useState('');
   const [deployBuildSubmitting, setDeployBuildSubmitting] = useState(false);
-  const [deployBuildJobs, setDeployBuildJobs] = useState<any[]>([]);
-  const [deployBuildSelectedJobId, setDeployBuildSelectedJobId] = useState<string | null>(null);
-  const [deployBuildSelectedJob, setDeployBuildSelectedJob] = useState<any>(null);
   const [deployBuildConfirmOpen, setDeployBuildConfirmOpen] = useState(false);
   const [deployBuildConfirmPlan, setDeployBuildConfirmPlan] = useState<any>(null);
   const [deployBuildDeleteAck, setDeployBuildDeleteAck] = useState(false);
+  const {
+    jobs: deployBuildJobs,
+    selectedJobId: deployBuildSelectedJobId,
+    selectedJob: deployBuildSelectedJob,
+    setSelectedJobId: setDeployBuildSelectedJobId,
+    setSelectedJob: setDeployBuildSelectedJob,
+    openJob: openBuildJob,
+    retryJob: retryBuildJob,
+    deinstallJob: deinstallBuildJob,
+    reloadJob: reloadBuildJob,
+  } = useCustomBuildRuns();
   const [installedCloudServers, setInstalledCloudServers] = useState<Set<string>>(new Set());
   const [installedRegistryServers, setInstalledRegistryServers] = useState<Set<string>>(new Set());
   const [addCustomRepoModalOpen, setAddCustomRepoModalOpen] = useState(false);
@@ -424,71 +433,13 @@ const MarketPage: React.FC = () => {
   };
 
   const handleOpenDeployBuildJob = async (jobId: string) => {
-    try {
-      const result = await apiGet(`/market/deploy/jobs/${jobId}`);
-      if (result.success) {
-        setDeployBuildSelectedJobId(jobId);
-        setDeployBuildSelectedJob(result.data);
-      }
-    } catch (error) {
-      console.error('Failed to fetch deploy build job', error);
-    }
+    await openBuildJob(jobId);
   };
-
-  const reloadDeployBuildJob = useCallback(async (jobId: string) => {
-    try {
-      const result = await apiGet(`/market/deploy/jobs/${jobId}`);
-      if (result.success) {
-        setDeployBuildSelectedJob(result.data);
-      }
-    } catch (error) {
-      console.error('Failed to refresh deploy build job', error);
-    }
-  }, []);
-
-  const loadDeployBuildJobs = useCallback(async () => {
-    try {
-      const result = await apiGet('/market/deploy/jobs');
-      if (result.success && Array.isArray(result.data)) {
-        setDeployBuildJobs(result.data);
-        if (deployBuildSelectedJobId) {
-          const selected = result.data.find((job: any) => job.id === deployBuildSelectedJobId);
-          if (selected) {
-            setDeployBuildSelectedJob(selected);
-            void reloadDeployBuildJob(deployBuildSelectedJobId);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Failed to load deploy build jobs', error);
-    }
-  }, [deployBuildSelectedJobId, reloadDeployBuildJob]);
-
-  useEffect(() => {
-    void loadDeployBuildJobs();
-
-    const intervalId = window.setInterval(async () => {
-      await loadDeployBuildJobs();
-      // Stop polling when the selected job reaches a terminal state
-      setDeployBuildSelectedJob((current: any) => {
-        if (current && isFinalBuildStatus(current.status)) {
-          window.clearInterval(intervalId);
-        }
-        return current;
-      });
-    }, 5000);
-
-    return () => window.clearInterval(intervalId);
-  }, [loadDeployBuildJobs]);
 
   const handleRetryDeployBuildJob = async (jobId: string) => {
     try {
-      const result = await apiPost(`/market/deploy/jobs/${jobId}/retry`);
-      if (!result.success) {
-        throw new Error(result.message || 'Failed to retry installation');
-      }
+      await retryBuildJob(jobId);
       showToast('Deployment retry started.', 'success');
-      await handleOpenDeployBuildJob(result.data.id);
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Failed to retry installation', 'error');
     }
@@ -496,12 +447,8 @@ const MarketPage: React.FC = () => {
 
   const handleDeinstallDeployBuildJob = async (jobId: string) => {
     try {
-      const result = await apiPost(`/market/deploy/jobs/${jobId}/deinstall`);
-      if (!result.success) {
-        throw new Error(result.message || 'Failed to deinstall installation');
-      }
+      await deinstallBuildJob(jobId);
       showToast('Deployment removal started.', 'success');
-      await handleOpenDeployBuildJob(result.data.id);
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Failed to deinstall installation', 'error');
     }
@@ -582,7 +529,7 @@ const MarketPage: React.FC = () => {
         throw new Error('Plan JSON must include a steps array.');
       }
 
-      const previewResult = await apiPost('/market/deploy/preview', {
+      const previewResult = await apiPost('/market/build-runs/preview', {
         repositoryUrl: deployBuildRepo.trim(),
         serverName: deployBuildName.trim() || undefined,
         version: deployBuildVersion.trim() || undefined,
@@ -619,7 +566,7 @@ const MarketPage: React.FC = () => {
       setDeployBuildSubmitting(true);
 
       const planForDeploy = applyTargetDirToPlan(deployBuildConfirmPlan, deployBuildTargetDir.trim());
-      const installResult = await apiPost('/market/deploy', {
+      const installResult = await apiPost('/market/build-runs', {
         repositoryUrl: deployBuildRepo.trim(),
         serverName: deployBuildName.trim() || undefined,
         version: deployBuildVersion.trim() || undefined,
@@ -633,7 +580,7 @@ const MarketPage: React.FC = () => {
       setDeployBuildSelectedJobId(installResult.data?.id ?? null);
       setDeployBuildSelectedJob(installResult.data ?? null);
       if (installResult.data?.id) {
-        await reloadDeployBuildJob(installResult.data.id);
+        await reloadBuildJob(installResult.data.id);
       }
       showToast(`Deployment started for ${deployBuildConfirmPlan.serverName}.`, 'success');
       setDeployBuildConfirmOpen(false);
@@ -690,7 +637,7 @@ const MarketPage: React.FC = () => {
     errorMessage.toLowerCase().includes('mcprouter api key not configured');
 
   const deployWizard = (
-    <DeployWizardSidepane
+    <CustomBuildRunSidepane
       open={deployBuildOpen}
       repositoryUrl={deployBuildRepo}
       serverName={deployBuildName}
@@ -816,7 +763,7 @@ const MarketPage: React.FC = () => {
           buildTemplateServers={localBuildTemplateServers}
           deploymentSection={
             showInlineDeploy ? (
-              <DeployWizardSidepane
+              <CustomBuildRunSidepane
                 open
                 embedded
                 repositoryUrl={deployBuildRepo}

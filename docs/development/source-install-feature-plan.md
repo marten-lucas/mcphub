@@ -1,7 +1,7 @@
 # Source-Install Feature — Implementation Plan
 
 > Branch: `feature/source-install-workflow`  
-> Status: In Progress — this document tracks what is done, what is open, and how the implementation should proceed.
+> Status: Phase 3 modularization complete locally; final follow-up validation must happen via push → pull on host → docker compose up → UI/browser checks. This document reflects the finalized architecture and implementation sequence for the custom-source workflow.
 
 ---
 
@@ -11,6 +11,19 @@ Enable users to use MCP servers from arbitrary GitHub repositories that are **no
 
 The workflow is intentionally identical to official repos from the user's perspective:  
 `Register → Detail Page → Build → Install (same ServerForm as official repos)`
+
+### Validation gate for every phase
+
+Each implementation phase must be validated in the following order before proceeding:
+
+1. Push the branch / committed changes.
+2. Pull the latest branch on the deployment host.
+3. Run `docker compose up` (or equivalent host rebuild flow).
+4. Execute the targeted automated tests.
+5. Run the relevant browser checks against the live app.
+6. Confirm the result matches the intended UX and build/run semantics.
+
+This prevents a feature from being marked complete without verifying the live deployment and user-visible flow.
 
 ---
 

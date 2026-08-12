@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import {
   createDeployBuildJob,
   deinstallDeployBuildJob,
+  generateInstallConfig,
   getDeployBuildJob,
   getDeployBuildJobs,
   executeDeployBuildJob,
@@ -10,6 +11,11 @@ import {
 } from '../services/deployBuildService.js';
 
 const isAdmin = (req: Request): boolean => Boolean((req as Request & { user?: { isAdmin?: boolean } }).user?.isAdmin);
+
+const getBuildRunId = (req: Request): string => {
+  const runId = (req.params as { runId?: string; jobId?: string }).runId ?? (req.params as { runId?: string; jobId?: string }).jobId;
+  return runId ?? '';
+};
 
 const getUsername = (req: Request): string => {
   return (req as Request & { user?: { username?: string; name?: string } }).user?.username
@@ -91,8 +97,9 @@ export const getDeployBuildJobHandler = async (req: Request, res: Response): Pro
     return;
   }
 
+  const jobId = getBuildRunId(req);
   try {
-    const job = await getDeployBuildJob(req.params.jobId);
+    const job = await getDeployBuildJob(jobId);
     if (!job) {
       res.status(404).json({ success: false, message: 'Deployment job not found' });
       return;
@@ -110,7 +117,7 @@ export const retryDeployBuildHandler = async (req: Request, res: Response): Prom
   }
 
   const username = getUsername(req);
-  const jobId = req.params.jobId;
+  const jobId = getBuildRunId(req);
   try {
     const retried = await retryDeployBuildJob(jobId);
     if (!retried) {
@@ -139,7 +146,7 @@ export const deinstallDeployBuildHandler = async (req: Request, res: Response): 
   }
 
   const username = getUsername(req);
-  const jobId = req.params.jobId;
+  const jobId = getBuildRunId(req);
   try {
     const deinstalled = await deinstallDeployBuildJob(jobId);
     if (!deinstalled) {
@@ -153,4 +160,16 @@ export const deinstallDeployBuildHandler = async (req: Request, res: Response): 
     auditLog('deinstall-deploy-build', username, { jobId, error: error instanceof Error ? error.message : 'unknown' }, false);
     res.status(500).json({ success: false, message: error instanceof Error ? error.message : 'Failed to uninstall deployment' });
   }
+};
+
+export const getInstallConfigHandler = async (req: Request, res: Response): Promise<void> => {
+  if (!isAdmin(req)) { res.status(403).json({ success: false, message: 'Admin only' }); return; }
+  const jobId = getBuildRunId(req);
+  const job = await getDeployBuildJob(jobId);
+  if (!job || job.status !== 'succeeded') {
+    res.status(404).json({ success: false, message: 'No succeeded build run found' });
+    return;
+  }
+  const config = generateInstallConfig(job);
+  res.json({ success: true, data: config });
 };

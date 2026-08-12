@@ -41,6 +41,7 @@ export interface DeployBuildPlan {
   engine: 'node' | 'python' | 'docker' | 'unknown';
   steps: DeployBuildStep[];
   prerequisites: string[];
+  monorepoSubdirCandidates?: string[];
 }
 
 export interface DeployBuildJob {
@@ -59,6 +60,8 @@ export interface DeployBuildJob {
   plan: DeployBuildPlan;
   logs: string[];
   error?: string;
+  detectedStartCommand?: string;
+  subdir?: string;
 }
 
 interface PreviewInstallInput {
@@ -135,6 +138,8 @@ const mapEntityToJob = (entity: DeployBuildJobEntity): DeployBuildJob => ({
   plan: entity.plan as unknown as DeployBuildPlan,
   logs: Array.isArray(entity.logs) ? entity.logs : [],
   error: entity.error ?? undefined,
+  detectedStartCommand: entity.detectedStartCommand ?? undefined,
+  subdir: entity.subdir ?? undefined,
 });
 
 const mapJobToEntity = (job: DeployBuildJob): DeployBuildJobEntity =>
@@ -154,6 +159,8 @@ const mapJobToEntity = (job: DeployBuildJob): DeployBuildJobEntity =>
     plan: job.plan,
     logs: job.logs,
     error: job.error ?? null,
+    detectedStartCommand: job.detectedStartCommand ?? null,
+    subdir: job.subdir ?? null,
   });
 
 const loadJobs = async (): Promise<DeployBuildJob[]> => {
@@ -250,24 +257,34 @@ const ensureInstallDirWithinRoot = async (installDir: string): Promise<void> => 
 
 const checkTooling = async (engine: string, log: (msg: string) => void): Promise<void> => {
   log('Checking prerequisites...');
-  const toolsToCheck = [];
+
+  const checkTool = (cmd: string, args: string[]): Promise<boolean> =>
+    new Promise(resolve => {
+      const child = spawn(cmd, args, { stdio: 'ignore', shell: false });
+      child.on('close', code => resolve(code === 0));
+      child.on('error', () => resolve(false));
+    });
+
+  const checks: Array<{ cmd: string; args: string[]; name: string }> = [
+    { cmd: 'git', args: ['--version'], name: 'git' },
+  ];
 
   if (engine === 'node') {
-    toolsToCheck.push({ cmd: 'node', arg: '--version' }, { cmd: 'npm', arg: '--version' });
+    checks.push({ cmd: 'node', args: ['--version'], name: 'node' });
+    checks.push({ cmd: 'npm', args: ['--version'], name: 'npm' });
   } else if (engine === 'python') {
-    toolsToCheck.push(
-      { cmd: 'python3', arg: '--version' },
-      { cmd: 'python3', arg: ['-m', 'pip', '--version'] },
-    );
+    checks.push({ cmd: 'python3', args: ['--version'], name: 'python3' });
+    // uv is optional - log warning but don't fail
   } else if (engine === 'docker') {
-    toolsToCheck.push(
-      { cmd: 'docker', arg: '--version' },
-      { cmd: 'docker', arg: ['compose', '--version'] },
-    );
+    checks.push({ cmd: 'docker', args: ['--version'], name: 'docker' });
   }
 
-  for (const tool of toolsToCheck) {
-    log(`Checking ${tool.cmd}...`);
+  for (const check of checks) {
+    const ok = await checkTool(check.cmd, check.args);
+    if (!ok) {
+      throw new Error(`Prerequisite not found: '${check.name}' is required but not installed or not in PATH`);
+    }
+    log(`✓ ${check.name} available`);
   }
 };
 
@@ -333,6 +350,7 @@ const analyzeRepository = async (repositoryUrl: string, _serverName: string): Pr
   owner: string;
   repo: string;
   fileNames: string[];
+  monorepoSubdirCandidates?: string[];
 }> => {
   try {
     const urlParts = repositoryUrl.replace(/\.git$/, '').split('/');
@@ -355,6 +373,23 @@ const analyzeRepository = async (repositoryUrl: string, _serverName: string): Pr
       return { engine: 'docker', prerequisites: ['docker', 'docker-compose', 'git'], defaultBranch, owner, repo, fileNames };
     }
 
+    // Scan one level of subdirs for package.json (monorepo detection)
+    const dirs = (contentsRes.data as any[]).filter((item: any) => item.type === 'dir');
+    const candidates: string[] = [];
+    for (const dir of dirs.slice(0, 5)) {
+      const subContentsUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${dir.name}?ref=${defaultBranch}`;
+      try {
+        const subRes = await axios.get(subContentsUrl, { timeout: 5000 });
+        const subFiles = (subRes.data as any[]).map((f: any) => f.name);
+        if (subFiles.includes('package.json') || subFiles.includes('pyproject.toml')) {
+          candidates.push(dir.name);
+        }
+      } catch { /* skip */ }
+    }
+    if (candidates.length > 0) {
+      return { engine: 'unknown', prerequisites: ['git'], defaultBranch, owner, repo, fileNames, monorepoSubdirCandidates: candidates };
+    }
+
     return { engine: 'unknown', prerequisites: ['git'], defaultBranch, owner, repo, fileNames };
   } catch (error) {
     console.warn('Failed to analyze repository', { repositoryUrl, error });
@@ -373,7 +408,7 @@ const generatePlan = async (input: DeployBuildRequest): Promise<DeployBuildPlan>
   const planId = input.plan?.id ?? `plan-${randomUUID()}`;
   const installDir =
     input.plan?.installDir ?? path.join(INSTALL_ROOT, `${serverName}-${planId.slice(-8)}`);
-  const { engine, prerequisites, defaultBranch, owner, repo, fileNames } = await analyzeRepository(repositoryUrl, serverName);
+  const { engine, prerequisites, defaultBranch, owner, repo, fileNames, monorepoSubdirCandidates } = await analyzeRepository(repositoryUrl, serverName);
 
   const baseSteps: DeployBuildStep[] = [
     {
@@ -477,28 +512,150 @@ const generatePlan = async (input: DeployBuildRequest): Promise<DeployBuildPlan>
     engine: (input.plan?.engine ?? engine) as 'node' | 'python' | 'docker' | 'unknown',
     steps,
     prerequisites: input.plan?.prerequisites ?? prerequisites,
+    monorepoSubdirCandidates: monorepoSubdirCandidates,
   };
 };
 
-const generateServerConfigFromJob = (job: DeployBuildJob): ServerConfig => {
+export const detectStartCommand = async (installDir: string, engine: string, subdir?: string): Promise<{
+  command: string;
+  args: string[];
+  detectedFrom: string;
+}> => {
+  const workDir = subdir ? path.join(installDir, subdir) : installDir;
+
+  if (engine === 'node') {
+    try {
+      const pkgPath = path.join(workDir, 'package.json');
+      const pkgRaw = await fs.readFile(pkgPath, 'utf8');
+      const pkg = JSON.parse(pkgRaw);
+
+      // Priority 1: scripts.start
+      if (pkg.scripts?.start) {
+        const startScript = pkg.scripts.start as string;
+        const parts = startScript.trim().split(/\s+/);
+        return { command: parts[0], args: parts.slice(1), detectedFrom: 'scripts.start' };
+      }
+
+      // Priority 2: bin entry
+      if (pkg.bin) {
+        const binEntries = typeof pkg.bin === 'string'
+          ? [pkg.bin]
+          : Object.values(pkg.bin as Record<string, string>);
+        if (binEntries.length > 0) {
+          const binPath = binEntries[0] as string;
+          const normalizedPath = binPath.startsWith('./') ? binPath.slice(2) : binPath;
+          return { command: 'node', args: [normalizedPath], detectedFrom: 'bin' };
+        }
+      }
+
+      // Priority 3: main field
+      if (pkg.main) {
+        return { command: 'node', args: [pkg.main as string], detectedFrom: 'main' };
+      }
+    } catch {
+      // fallback below
+    }
+    return { command: 'node', args: ['index.js'], detectedFrom: 'fallback' };
+  }
+
+  if (engine === 'python') {
+    // Check pyproject.toml for scripts
+    try {
+      const pyprojectPath = path.join(workDir, 'pyproject.toml');
+      const content = await fs.readFile(pyprojectPath, 'utf8');
+      const scriptMatch = content.match(/\[project\.scripts\][^[]*\n(\w[\w-]*)\s*=/);
+      if (scriptMatch) {
+        const scriptName = scriptMatch[1];
+        const hasUvLock = await fs.access(path.join(workDir, 'uv.lock')).then(() => true).catch(() => false);
+        if (hasUvLock) {
+          return { command: 'uv', args: ['run', scriptName], detectedFrom: 'pyproject.toml+uv' };
+        }
+        return { command: scriptName, args: [], detectedFrom: 'pyproject.toml' };
+      }
+    } catch { /* continue */ }
+
+    // Check for main.py
+    try {
+      await fs.access(path.join(workDir, 'main.py'));
+      return { command: 'python3', args: ['main.py'], detectedFrom: 'main.py' };
+    } catch { /* continue */ }
+
+    // Check for src/ layout
+    try {
+      const pyprojectPath = path.join(workDir, 'pyproject.toml');
+      const content = await fs.readFile(pyprojectPath, 'utf8');
+      const nameMatch = content.match(/^name\s*=\s*"([^"]+)"/m);
+      if (nameMatch) {
+        const packageName = nameMatch[1].replace(/-/g, '_');
+        return { command: 'python3', args: ['-m', packageName], detectedFrom: 'pyproject.toml name' };
+      }
+    } catch { /* continue */ }
+
+    return { command: 'python3', args: ['-m', 'main'], detectedFrom: 'fallback' };
+  }
+
+  return { command: 'sh', args: [], detectedFrom: 'fallback' };
+};
+
+export const generateInstallConfig = (job: DeployBuildJob): {
+  suggestedName: string;
+  config: { type: string; command: string; args: string[]; cwd: string; env: Record<string, string> };
+} => {
+  const workDir = job.subdir ? path.join(job.installDir, job.subdir) : job.installDir;
+
+  let command = 'node';
+  let args: string[] = [];
+
+  if (job.detectedStartCommand) {
+    const parts = job.detectedStartCommand.trim().split(/\s+/);
+    command = parts[0];
+    args = parts.slice(1);
+  } else if (job.engine === 'node') {
+    command = 'node';
+    args = ['index.js'];
+  } else if (job.engine === 'python') {
+    command = 'python3';
+    args = ['main.py'];
+  }
+
+  return {
+    suggestedName: job.serverName,
+    config: {
+      type: 'stdio',
+      command,
+      args,
+      cwd: workDir,
+      env: {},
+    },
+  };
+};
+
+export const generateServerConfigFromJob = (job: DeployBuildJob): ServerConfig => {
+  const workDir = job.subdir ? path.join(job.installDir, job.subdir) : job.installDir;
+
   const config: ServerConfig = {
     type: job.engine === 'docker' ? 'sse' : 'stdio',
     description: `Source-installed from ${job.repositoryUrl}${job.version ? ` (${job.version})` : ''}`,
     enabled: true,
+    cwd: workDir,
+    env: {},
   };
+
+  if (job.detectedStartCommand) {
+    const parts = job.detectedStartCommand.trim().split(/\s+/);
+    config.command = parts[0];
+    config.args = parts.slice(1);
+    return config;
+  }
 
   if (job.engine === 'docker') {
     config.url = 'http://localhost:3000';
   } else if (job.engine === 'node') {
-    config.command = 'npm';
-    config.args = ['start'];
-    config.cwd = job.installDir;
-    config.env = {};
+    config.command = 'node';
+    config.args = ['index.js'];
   } else if (job.engine === 'python') {
     config.command = 'python3';
-    config.args = ['-m', 'mcp', 'run', job.serverName];
-    config.cwd = job.installDir;
-    config.env = {};
+    config.args = ['main.py'];
   }
 
   return config;
@@ -686,11 +843,14 @@ export const executeDeployBuildJob = async (jobId: string): Promise<void> => {
       if (!step.command || step.id === 'clone') {
         continue;
       }
+      const workDir = currentJob.subdir
+        ? path.join(currentJob.installDir, currentJob.subdir)
+        : currentJob.installDir;
       try {
         currentJob = addLogLine(currentJob, `Running: ${step.title}`);
         await persist(currentJob);
         await runCommand(step.command, step.args ?? [], {
-          cwd: step.cwd ?? currentJob.installDir,
+          cwd: step.cwd ?? workDir,
           env: process.env,
           log: (line) => {
             currentJob = addLogLine(currentJob, line);
@@ -710,6 +870,18 @@ export const executeDeployBuildJob = async (jobId: string): Promise<void> => {
     currentJob = addLogLine(currentJob, 'Installation completed.');
     currentJob = { ...currentJob, status: 'succeeded', updatedAt: new Date().toISOString(), completedAt: new Date().toISOString() };
     await persist(currentJob);
+
+    // Detect start command from built artifacts
+    try {
+      const startInfo = await detectStartCommand(currentJob.installDir, currentJob.engine, currentJob.subdir);
+      currentJob = {
+        ...currentJob,
+        detectedStartCommand: `${startInfo.command} ${startInfo.args.join(' ')}`.trim(),
+        updatedAt: new Date().toISOString()
+      };
+      currentJob = addLogLine(currentJob, `Detected start command: ${currentJob.detectedStartCommand} (from ${startInfo.detectedFrom})`);
+      await persist(currentJob);
+    } catch { /* non-fatal */ }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     currentJob = addLogLine(currentJob, `Installation failed: ${errorMessage}`);
