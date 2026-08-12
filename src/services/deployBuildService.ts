@@ -4,7 +4,6 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import axios from 'axios';
 import { Repository } from 'typeorm';
-import { addOrUpdateServer, removeServer } from './mcpService.js';
 import type { ServerConfig } from '../types/index.js';
 import { getAppDataSource } from '../db/connection.js';
 import DeployBuildJobEntity from '../db/entities/DeployBuildJob.js';
@@ -711,6 +710,7 @@ export const registerServerFromInstall = async (jobId: string): Promise<boolean>
   }
 
   try {
+    const { addOrUpdateServer } = await import('./mcpService.js');
     const serverConfig = generateServerConfigFromJob(job);
     const result = await addOrUpdateServer(job.serverName, serverConfig, true);
     if (result.success) {
@@ -745,6 +745,7 @@ export const deinstallDeployBuildJob = async (jobId: string): Promise<DeployBuil
     // Remove server from MCP registry if it was successfully registered
     if (job.status === 'succeeded') {
       try {
+        const { removeServer } = await import('./mcpService.js');
         await removeServer(job.serverName);
         await updateJob(jobId, (currentJob) =>
           addLogLine(currentJob, `Removed server '${job.serverName}' from registry.`),

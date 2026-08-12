@@ -63,6 +63,9 @@ jest.mock('../../src/controllers/marketController.js', () => ({
   searchMarketServersByQuery: routeHandler,
   getMarketServersByCategory: routeHandler,
   getMarketServersByTag: routeHandler,
+  registerCustomMarketServer: routeHandler,
+  updateCustomMarketServer: routeHandler,
+  deleteCustomMarketServer: routeHandler,
 }));
 
 jest.mock('../../src/controllers/cloudController.js', () => ({
@@ -100,6 +103,8 @@ jest.mock('../../src/controllers/configController.js', () => ({
   getRuntimeConfig: routeHandler,
   getPublicConfig: routeHandler,
   getMcpSettingsJson: routeHandler,
+  testBetterAuthOidcConnection: routeHandler,
+  restartApplication: routeHandler,
 }));
 
 jest.mock('../../src/controllers/toolController.js', () => ({

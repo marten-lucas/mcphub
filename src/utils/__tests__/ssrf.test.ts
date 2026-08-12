@@ -83,7 +83,9 @@ describe('assertSafeUrl', () => {
 
   it('fails closed when DNS resolves nothing', async () => {
     await expect(
-      assertSafeUrl('http://unresolvable.invalid/'),
+      assertSafeUrl('http://unresolvable.invalid/', {
+        lookup: lookup({ 'unresolvable.invalid': [] }),
+      }),
     ).rejects.toThrow(UnsafeUrlError);
   });
 
