@@ -175,6 +175,21 @@ describe('previewDeployBuild — plan generation', () => {
     expect(plan.engine).toBe('unknown');
     expect(plan.steps.length).toBeGreaterThan(0); // at least clone step
   });
+
+  it('treats latest as the default branch marker instead of a git checkout ref', async () => {
+    mockGitHubRepo();
+    mockGitHubContents(['package.json']);
+    mockPackageJson({ start: 'node index.js' });
+
+    const plan = await previewDeployBuild({
+      repositoryUrl: 'https://github.com/example/simple-repo',
+      serverName: 'simple-server',
+      version: 'latest',
+    });
+
+    expect(plan.version).toBe('latest');
+    expect(plan.steps.find((step) => step.id === 'clone')).toBeDefined();
+  });
 });
 
 describe('isFinalBuildStatus', () => {

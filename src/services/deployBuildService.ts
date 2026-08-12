@@ -317,6 +317,15 @@ const ensureInstallDirWithinRoot = async (installDir: string): Promise<void> => 
   }
 };
 
+const shouldCheckoutVersion = (version?: string): boolean => {
+  if (typeof version !== 'string') {
+    return false;
+  }
+
+  const normalizedVersion = version.trim().toLowerCase();
+  return Boolean(normalizedVersion && normalizedVersion !== 'latest');
+};
+
 
 const checkTooling = async (engine: string, log: (msg: string) => void): Promise<void> => {
   log('Checking prerequisites...');
@@ -919,10 +928,11 @@ export const executeDeployBuildJob = async (jobId: string): Promise<void> => {
     });
 
     const version = currentJob.version;
-    if (typeof version === 'string' && version.trim()) {
-      currentJob = addLogLine(currentJob, `Checking out ${version}...`);
+    if (shouldCheckoutVersion(version)) {
+      const checkoutVersion = version!.trim();
+      currentJob = addLogLine(currentJob, `Checking out ${checkoutVersion}...`);
       await persist(currentJob);
-      await runCommand('git', ['checkout', version], {
+      await runCommand('git', ['checkout', checkoutVersion], {
         cwd: currentJob.installDir,
         log: (line) => {
           currentJob = addLogLine(currentJob, line);
