@@ -378,7 +378,7 @@ const generatePlan = async (input: DeployBuildRequest): Promise<DeployBuildPlan>
       id: 'install',
       title: 'Install npm dependencies',
       command: 'npm',
-      args: ['install'],
+      args: ['install', '--include=dev'],
       cwd: installDir,
     });
 
