@@ -8,6 +8,7 @@ import {
   ServerConfig,
   RegistryServerEntry,
   RegistryServerData,
+  isFinalBuildStatus,
 } from '@/types';
 import { useMarketData } from '@/hooks/useMarketData';
 import { useCloudData } from '@/hooks/useCloudData';
@@ -466,8 +467,15 @@ const MarketPage: React.FC = () => {
   useEffect(() => {
     void loadDeployBuildJobs();
 
-    const intervalId = window.setInterval(() => {
-      void loadDeployBuildJobs();
+    const intervalId = window.setInterval(async () => {
+      await loadDeployBuildJobs();
+      // Stop polling when the selected job reaches a terminal state
+      setDeployBuildSelectedJob((current: any) => {
+        if (current && isFinalBuildStatus(current.status)) {
+          window.clearInterval(intervalId);
+        }
+        return current;
+      });
     }, 5000);
 
     return () => window.clearInterval(intervalId);

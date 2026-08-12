@@ -5,6 +5,8 @@ export type ServerStatus = 'connecting' | 'connected' | 'disconnected' | 'oauth_
 export interface MarketServerRepository {
   type: string;
   url: string;
+  subdir?: string;
+  subdir?: string;
 }
 
 export interface MarketServerAuthor {
@@ -808,4 +810,65 @@ export interface GroupCost {
   totalCount: number;
   direct: { exposed: number; gross: number };
   smartRouting: SmartRoutingCost | null;
+}
+
+// Build run types (source-install feature)
+export type BuildRunStatus =
+  | 'queued'
+  | 'running'
+  | 'succeeded'
+  | 'failed'
+  | 'prerequisite_error'
+  | 'clone_error'
+  | 'install_error'
+  | 'build_error'
+  | 'network_error'
+  | 'deleting'
+  | 'deinstalled';
+
+export const FINAL_BUILD_STATUSES: ReadonlySet<BuildRunStatus> = new Set([
+  'succeeded', 'failed', 'prerequisite_error', 'clone_error',
+  'install_error', 'build_error', 'network_error', 'deinstalled',
+] as BuildRunStatus[]);
+
+export const isFinalBuildStatus = (status: string): boolean =>
+  (FINAL_BUILD_STATUSES as Set<string>).has(status);
+
+export interface BuildRunStep {
+  id: string;
+  title: string;
+  command: string;
+  args?: string[];
+  cwd?: string;
+  optional?: boolean;
+}
+
+export interface BuildRunPlan {
+  id: string;
+  repositoryUrl: string;
+  serverName: string;
+  version?: string;
+  installRoot: string;
+  installDir: string;
+  engine: 'node' | 'python' | 'docker' | 'unknown';
+  steps: BuildRunStep[];
+  prerequisites: string[];
+}
+
+export interface BuildRun {
+  id: string;
+  repositoryUrl: string;
+  serverName: string;
+  version?: string;
+  status: BuildRunStatus;
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  installRoot: string;
+  installDir: string;
+  engine: 'node' | 'python' | 'docker' | 'unknown';
+  plan: BuildRunPlan;
+  logs: string[];
+  error?: string;
 }

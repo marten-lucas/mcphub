@@ -2,7 +2,6 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import net from 'node:net';
 import axios from 'axios';
 import { Repository } from 'typeorm';
 import { addOrUpdateServer, removeServer } from './mcpService.js';
@@ -19,8 +18,6 @@ export type DeployBuildStatus =
   | 'clone_error'
   | 'install_error'
   | 'build_error'
-  | 'startup_error'
-  | 'port_error'
   | 'network_error'
   | 'deleting' 
   | 'deinstalled';
@@ -32,7 +29,6 @@ export interface DeployBuildStep {
   args?: string[];
   cwd?: string;
   optional?: boolean;
-  background?: boolean;
 }
 
 export interface DeployBuildPlan {
@@ -45,7 +41,6 @@ export interface DeployBuildPlan {
   engine: 'node' | 'python' | 'docker' | 'unknown';
   steps: DeployBuildStep[];
   prerequisites: string[];
-  selectedPort?: number;
 }
 
 export interface DeployBuildJob {
@@ -62,10 +57,8 @@ export interface DeployBuildJob {
   installDir: string;
   engine: 'node' | 'python' | 'docker' | 'unknown';
   plan: DeployBuildPlan;
-  processPid?: number;
   logs: string[];
   error?: string;
-  selectedPort?: number;
 }
 
 interface PreviewInstallInput {
@@ -84,7 +77,6 @@ interface DeployBuildPlanInput {
   engine?: 'node' | 'python' | 'docker' | 'unknown';
   steps?: DeployBuildStep[];
   prerequisites?: string[];
-  selectedPort?: number;
 }
 
 interface DeployBuildRequest extends PreviewInstallInput {
@@ -131,10 +123,8 @@ const mapEntityToJob = (entity: DeployBuildJobEntity): DeployBuildJob => ({
   installDir: entity.installDir,
   engine: entity.engine,
   plan: entity.plan as unknown as DeployBuildPlan,
-  processPid: entity.processPid ?? undefined,
   logs: Array.isArray(entity.logs) ? entity.logs : [],
   error: entity.error ?? undefined,
-  selectedPort: entity.selectedPort ?? undefined,
 });
 
 const mapJobToEntity = (job: DeployBuildJob): DeployBuildJobEntity =>
@@ -152,10 +142,8 @@ const mapJobToEntity = (job: DeployBuildJob): DeployBuildJobEntity =>
     installDir: job.installDir,
     engine: job.engine,
     plan: job.plan,
-    processPid: job.processPid ?? null,
     logs: job.logs,
     error: job.error ?? null,
-    selectedPort: job.selectedPort ?? null,
   });
 
 const loadJobs = async (): Promise<DeployBuildJob[]> => {
@@ -211,19 +199,6 @@ const preflightInstallDirectory = async (
   await fs.mkdir(path.dirname(installDir), { recursive: true });
 };
 
-const readJobs = async (): Promise<DeployBuildJob[]> => {
-  return loadJobs();
-};
-
-const writeJobs = async (jobs: DeployBuildJob[]): Promise<void> => {
-  if (isDatabaseMode()) {
-    await Promise.all(jobs.map((job) => persistJob(job)));
-    return;
-  }
-
-  await ensureStorage();
-  await fs.writeFile(JOBS_FILE, JSON.stringify(jobs, null, 2), 'utf8');
-};
 
 const addLogLine = (job: DeployBuildJob, line: string): DeployBuildJob => {
   const logs = [...job.logs];
@@ -260,20 +235,6 @@ const ensureInstallDirWithinRoot = async (installDir: string): Promise<void> => 
   }
 };
 
-const findAvailablePort = async (): Promise<number> => {
-  return new Promise<number>((resolve, reject) => {
-    const server = net.createServer();
-    server.listen(0, () => {
-      const address = server.address();
-      if (address && typeof address === 'object' && typeof address.port === 'number') {
-        server.close(() => resolve(address.port));
-      } else {
-        reject(new Error('Could not determine available port'));
-      }
-    });
-    server.on('error', reject);
-  });
-};
 
 const checkTooling = async (engine: string, log: (msg: string) => void): Promise<void> => {
   log('Checking prerequisites...');
@@ -352,100 +313,15 @@ const runCommand = async (
   });
 };
 
-const runBackgroundCommand = async (
-  command: string,
-  args: string[],
-  options: { cwd?: string; env?: NodeJS.ProcessEnv; log: (line: string) => void },
-): Promise<{ pid: number; exited: Promise<number | null> }> => {
-  assertSafeCommand(command, args);
 
-  const child = spawn(command, args, {
-    cwd: options.cwd,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: options.env ?? process.env,
-    shell: false,
-    detached: true,
-  });
-
-  if (!child.pid) {
-    throw new Error('Failed to get process ID for background command');
-  }
-
-  const exited = new Promise<number | null>((resolve) => {
-    child.once('close', (code) => {
-      resolve(code);
-    });
-  });
-
-  child.stdout?.on('data', (chunk: Buffer) => {
-    const lines = chunk.toString().split(/\r?\n/).filter(Boolean);
-    lines.forEach((line) => options.log(maskSensitiveData(line)));
-  });
-
-  child.stderr?.on('data', (chunk: Buffer) => {
-    const lines = chunk.toString().split(/\r?\n/).filter(Boolean);
-    lines.forEach((line) => options.log(maskSensitiveData(line)));
-  });
-
-  return { pid: child.pid, exited };
-};
-
-/**
- * After background process startup grace period, verify it's still running.
- * If it has already exited, throw an error immediately.
- * This catches startup failures that occur right after the process launches.
- */
-const verifyBackgroundHealthAfterStart = async (
-  pid: number,
-  childExit: Promise<number | null>,
-  log: (line: string) => void,
-): Promise<void> => {
-  // Wait a bit longer after grace period to catch early crashes
-  const delayMs = 2000; // Additional 2 seconds after grace period
-  log(`Performing health check after startup grace period...`);
-  
-  // Check if process has already exited (returns immediately if no error)
-  const raceResult = await Promise.race([
-    childExit.then((code) => {
-      return { exited: true, code } as const;
-    }),
-    new Promise<{ exited: false }>((resolve) => {
-      setTimeout(() => resolve({ exited: false }), delayMs);
-    }),
-  ]);
-
-  if (raceResult.exited) {
-    throw new Error(
-      `Background process (PID ${pid}) exited after startup${
-        raceResult.code !== null ? ` with exit code ${raceResult.code}` : ''
-      }. Server may have failed to start properly.`
-    );
-  }
-
-  log(`Background process (PID ${pid}) is healthy and running.`);
-};
-
-const monitorBackgroundStart = async (
-  pid: number,
-  childExit: Promise<number | null>,
-  log: (line: string) => void,
-  graceMs = 10000,
-): Promise<void> => {
-  log(`Monitoring background process ${pid} for ${graceMs / 1000}s startup grace period.`);
-  await Promise.race([
-    childExit.then((code) => {
-      throw new Error(`Background process exited during startup${code !== null ? ` with code ${code}` : ''}.`);
-    }),
-    new Promise<void>((resolve) => {
-      setTimeout(resolve, graceMs);
-    }),
-  ]);
-};
-
-const analyzeRepository = async (repositoryUrl: string, serverName: string): Promise<{ engine: 'node' | 'python' | 'docker' | 'unknown'; prerequisites: string[] }> => {
-  const engine: 'node' | 'python' | 'docker' | 'unknown' = 'unknown';
-  const prerequisites: string[] = [];
-
+const analyzeRepository = async (repositoryUrl: string, _serverName: string): Promise<{
+  engine: 'node' | 'python' | 'docker' | 'unknown';
+  prerequisites: string[];
+  defaultBranch: string;
+  owner: string;
+  repo: string;
+  fileNames: string[];
+}> => {
   try {
     const urlParts = repositoryUrl.replace(/\.git$/, '').split('/');
     const owner = urlParts[urlParts.length - 2];
@@ -460,17 +336,19 @@ const analyzeRepository = async (repositoryUrl: string, serverName: string): Pro
     const fileNames = (contentsRes.data as any[]).map((item) => item.name);
 
     if (fileNames.includes('package.json')) {
-      return { engine: 'node', prerequisites: ['node', 'npm', 'git'] };
-    } else if (fileNames.includes('pyproject.toml') || fileNames.includes('setup.py')) {
-      return { engine: 'python', prerequisites: ['python3', 'pip', 'git'] };
+      return { engine: 'node', prerequisites: ['node', 'npm', 'git'], defaultBranch, owner, repo, fileNames };
+    } else if (fileNames.includes('pyproject.toml') || fileNames.includes('setup.py') || fileNames.includes('requirements.txt')) {
+      return { engine: 'python', prerequisites: ['python3', 'pip', 'git'], defaultBranch, owner, repo, fileNames };
     } else if (fileNames.includes('Dockerfile') || fileNames.includes('docker-compose.yml')) {
-      return { engine: 'docker', prerequisites: ['docker', 'docker-compose', 'git'] };
+      return { engine: 'docker', prerequisites: ['docker', 'docker-compose', 'git'], defaultBranch, owner, repo, fileNames };
     }
+
+    return { engine: 'unknown', prerequisites: ['git'], defaultBranch, owner, repo, fileNames };
   } catch (error) {
     console.warn('Failed to analyze repository', { repositoryUrl, error });
   }
 
-  return { engine: 'unknown', prerequisites: ['git'] };
+  return { engine: 'unknown', prerequisites: ['git'], defaultBranch: 'main', owner: '', repo: '', fileNames: [] };
 };
 
 const generatePlan = async (input: DeployBuildRequest): Promise<DeployBuildPlan> => {
@@ -483,7 +361,7 @@ const generatePlan = async (input: DeployBuildRequest): Promise<DeployBuildPlan>
   const planId = input.plan?.id ?? `plan-${randomUUID()}`;
   const installDir =
     input.plan?.installDir ?? path.join(INSTALL_ROOT, `${serverName}-${planId.slice(-8)}`);
-  const { engine, prerequisites } = await analyzeRepository(repositoryUrl, serverName);
+  const { engine, prerequisites, defaultBranch, owner, repo, fileNames } = await analyzeRepository(repositoryUrl, serverName);
 
   const baseSteps: DeployBuildStep[] = [
     {
@@ -503,46 +381,66 @@ const generatePlan = async (input: DeployBuildRequest): Promise<DeployBuildPlan>
       args: ['install'],
       cwd: installDir,
     });
-    baseSteps.push({
-      id: 'start',
-      title: 'Start server',
-      command: 'npm',
-      args: ['start'],
-      cwd: installDir,
-      background: true,
-    });
+
+    // Check if package.json has a build script
+    let hasBuildScript = false;
+    if (owner && repo && fileNames.includes('package.json')) {
+      try {
+        const pkgJsonUrl = `https://api.github.com/repos/${owner}/${repo}/contents/package.json?ref=${defaultBranch}`;
+        const pkgJsonRes = await axios.get(pkgJsonUrl, { timeout: 10000 });
+        const content = Buffer.from(pkgJsonRes.data.content, 'base64').toString('utf8');
+        const pkgJson = JSON.parse(content);
+        hasBuildScript = Boolean(pkgJson?.scripts?.build);
+      } catch {
+        // If we can't read package.json, assume no build script
+      }
+    }
+
+    if (hasBuildScript) {
+      baseSteps.push({
+        id: 'build',
+        title: 'Build project',
+        command: 'npm',
+        args: ['run', 'build'],
+        cwd: installDir,
+      });
+    }
   } else if (engine === 'python') {
-    baseSteps.push({
-      id: 'venv',
-      title: 'Create virtual environment',
-      command: 'python3',
-      args: ['-m', 'venv', '.venv'],
-      cwd: installDir,
-    });
-    baseSteps.push({
-      id: 'install',
-      title: 'Install Python package',
-      command: 'python3',
-      args: ['-m', 'pip', 'install', '-e', '.'],
-      cwd: installDir,
-    });
-    baseSteps.push({
-      id: 'start',
-      title: 'Start server',
-      command: 'python3',
-      args: ['-m', 'pip', 'install', '-e', '.'],
-      cwd: installDir,
-      background: true,
-      optional: true,
-    });
+    const hasUvLock = fileNames.includes('uv.lock');
+    const hasRequirements = fileNames.includes('requirements.txt');
+
+    if (hasUvLock) {
+      baseSteps.push({
+        id: 'install',
+        title: 'Install dependencies with uv',
+        command: 'uv',
+        args: ['sync'],
+        cwd: installDir,
+      });
+    } else if (hasRequirements) {
+      baseSteps.push({
+        id: 'install',
+        title: 'Install Python dependencies',
+        command: 'pip',
+        args: ['install', '-r', 'requirements.txt'],
+        cwd: installDir,
+      });
+    } else {
+      baseSteps.push({
+        id: 'install',
+        title: 'Install Python package',
+        command: 'pip',
+        args: ['install', '-e', '.'],
+        cwd: installDir,
+      });
+    }
   } else if (engine === 'docker') {
     baseSteps.push({
       id: 'build',
-      title: 'Build and start containers',
+      title: 'Build Docker image',
       command: 'docker',
-      args: ['compose', 'up', '--build', '-d'],
+      args: ['compose', 'build'],
       cwd: installDir,
-      background: true,
     });
   } else {
     baseSteps.push({
@@ -564,10 +462,9 @@ const generatePlan = async (input: DeployBuildRequest): Promise<DeployBuildPlan>
     version: input.plan?.version ?? input.version,
     installRoot: input.plan?.installRoot ?? INSTALL_ROOT,
     installDir: input.plan?.installDir ?? installDir,
-    engine,
+    engine: (input.plan?.engine ?? engine) as 'node' | 'python' | 'docker' | 'unknown',
     steps,
     prerequisites: input.plan?.prerequisites ?? prerequisites,
-    selectedPort: input.plan?.selectedPort,
   };
 };
 
@@ -579,21 +476,17 @@ const generateServerConfigFromJob = (job: DeployBuildJob): ServerConfig => {
   };
 
   if (job.engine === 'docker') {
-    config.url = job.selectedPort ? `http://localhost:${job.selectedPort}` : 'http://localhost:3000';
+    config.url = 'http://localhost:3000';
   } else if (job.engine === 'node') {
     config.command = 'npm';
     config.args = ['start'];
     config.cwd = job.installDir;
-    config.env = {
-      ...(job.selectedPort ? { PORT: String(job.selectedPort) } : {}),
-    };
+    config.env = {};
   } else if (job.engine === 'python') {
     config.command = 'python3';
     config.args = ['-m', 'mcp', 'run', job.serverName];
     config.cwd = job.installDir;
-    config.env = {
-      ...(job.selectedPort ? { PORT: String(job.selectedPort) } : {}),
-    };
+    config.env = {};
   }
 
   return config;
@@ -624,11 +517,11 @@ export const createDeployBuildJob = async (input: DeployBuildRequest): Promise<D
 };
 
 export const getDeployBuildJobs = async (): Promise<DeployBuildJob[]> => {
-  return readJobs();
+  return loadJobs();
 };
 
 export const getDeployBuildJob = async (jobId: string): Promise<DeployBuildJob | null> => {
-  const jobs = await readJobs();
+  const jobs = await loadJobs();
   return jobs.find((job) => job.id === jobId) ?? null;
 };
 
@@ -743,17 +636,6 @@ export const executeDeployBuildJob = async (jobId: string): Promise<void> => {
 
     await ensureInstallDirWithinRoot(currentJob.installDir);
 
-    const selectedPort = currentJob.plan.selectedPort ?? (currentJob.engine === 'node' || currentJob.engine === 'python' ? await findAvailablePort() : undefined);
-    if (typeof selectedPort === 'number') {
-      currentJob = {
-        ...currentJob,
-        plan: { ...currentJob.plan, selectedPort },
-        selectedPort,
-      };
-      currentJob = addLogLine(currentJob, `Selected port ${selectedPort} for runtime environment.`);
-      await persist(currentJob);
-    }
-
     currentJob = addLogLine(currentJob, `Using install root ${currentJob.installDir}`);
     await persist(currentJob);
 
@@ -788,39 +670,8 @@ export const executeDeployBuildJob = async (jobId: string): Promise<void> => {
       });
     }
 
-    const stepEnv = {
-      ...process.env,
-      ...(currentJob.selectedPort ? { PORT: String(currentJob.selectedPort), MCPHUB_SOURCE_INSTALL_PORT: String(currentJob.selectedPort) } : {}),
-    };
-
     for (const step of currentJob.plan.steps) {
       if (!step.command || step.id === 'clone') {
-        continue;
-      }
-      if (step.background) {
-        currentJob = addLogLine(currentJob, `Starting background process: ${step.title}`);
-        await persist(currentJob);
-        const background = await runBackgroundCommand(step.command, step.args ?? [], {
-          cwd: step.cwd ?? currentJob.installDir,
-          env: stepEnv,
-          log: (line) => {
-            currentJob = addLogLine(currentJob, line);
-            void persist(currentJob);
-          },
-        });
-        await monitorBackgroundStart(background.pid, background.exited, (line) => {
-          currentJob = addLogLine(currentJob, line);
-          void persist(currentJob);
-        });
-        // Perform additional health check after grace period to catch early crashes
-        await verifyBackgroundHealthAfterStart(background.pid, background.exited, (line) => {
-          currentJob = addLogLine(currentJob, line);
-          void persist(currentJob);
-        });
-        const pid = background.pid;
-        currentJob = addLogLine(currentJob, `Background process started with pid ${pid}.`);
-        currentJob = { ...currentJob, processPid: pid, updatedAt: new Date().toISOString() };
-        await persist(currentJob);
         continue;
       }
       try {
@@ -828,7 +679,7 @@ export const executeDeployBuildJob = async (jobId: string): Promise<void> => {
         await persist(currentJob);
         await runCommand(step.command, step.args ?? [], {
           cwd: step.cwd ?? currentJob.installDir,
-          env: stepEnv,
+          env: process.env,
           log: (line) => {
             currentJob = addLogLine(currentJob, line);
             void persist(currentJob);
@@ -846,21 +697,6 @@ export const executeDeployBuildJob = async (jobId: string): Promise<void> => {
 
     currentJob = addLogLine(currentJob, 'Installation completed.');
     currentJob = { ...currentJob, status: 'succeeded', updatedAt: new Date().toISOString(), completedAt: new Date().toISOString() };
-    await persist(currentJob);
-
-    // Auto-register the server from the successful installation
-    currentJob = addLogLine(currentJob, `Registering server '${currentJob.serverName}' with MCP hub...`);
-    await persist(currentJob);
-    const registered = await registerServerFromInstall(jobId);
-    const persistedJob = await getDeployBuildJob(jobId);
-    if (persistedJob) {
-      currentJob = persistedJob;
-    }
-    if (registered) {
-      currentJob = addLogLine(currentJob, `Server '${currentJob.serverName}' registered and ready to use.`);
-    } else {
-      currentJob = addLogLine(currentJob, `Server registration completed (manual verification recommended).`);
-    }
     await persist(currentJob);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -881,12 +717,6 @@ export const executeDeployBuildJob = async (jobId: string): Promise<void> => {
     } else if (errorMessage.includes('build') || errorMessage.includes('compile') || errorMessage.includes('tsc')) {
       errorStatus = 'build_error';
       currentJob = addLogLine(currentJob, 'ERROR_TYPE: Build/compile step failed');
-    } else if (errorMessage.includes('EADDRINUSE') || errorMessage.includes('port') || errorMessage.includes('already in use')) {
-      errorStatus = 'port_error';
-      currentJob = addLogLine(currentJob, 'ERROR_TYPE: Port already in use');
-    } else if (errorMessage.includes('exited after startup') || errorMessage.includes('Background process') || errorMessage.includes('startup')) {
-      errorStatus = 'startup_error';
-      currentJob = addLogLine(currentJob, 'ERROR_TYPE: Process crashed during startup');
     } else if (errorMessage.includes('ECONNREFUSED') || errorMessage.includes('ENOTFOUND') || errorMessage.includes('ETIMEDOUT') || errorMessage.includes('network')) {
       errorStatus = 'network_error';
       currentJob = addLogLine(currentJob, 'ERROR_TYPE: Network error (DNS, connection, timeout)');
