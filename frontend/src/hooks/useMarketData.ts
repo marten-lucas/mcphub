@@ -259,29 +259,26 @@ export const useMarketData = () => {
 
   // Install server to the local environment
   const installServer = useCallback(
-    async (server: MarketServer, customConfig: ServerConfig) => {
+    async (server: MarketServer, customPayload: { name: string; config: ServerConfig }) => {
       try {
+        const customConfig = customPayload.config;
         const installType = server.installations?.npm
           ? 'npm'
           : Object.keys(server.installations || {}).length > 0
             ? Object.keys(server.installations)[0]
             : null;
-
-        if (!installType || !server.installations?.[installType]) {
-          setError(t('market.noInstallationMethod'));
-          return false;
-        }
-
-        const installation = server.installations[installType];
+        const installation = installType && server.installations?.[installType]
+          ? server.installations[installType]
+          : null;
 
         // Prepare server configuration, merging with customConfig
         const serverConfig = {
-          name: server.name,
-          config:
-            customConfig.type === 'stdio'
+          name: customPayload.name,
+          config: installation && customConfig.type === 'stdio'
               ? {
                   command: customConfig.command || installation.command || '',
                   args: customConfig.args || installation.args || [],
+                  cwd: customConfig.cwd,
                   env: { ...installation.env, ...customConfig.env },
                 }
               : customConfig,

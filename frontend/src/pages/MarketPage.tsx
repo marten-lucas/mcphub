@@ -429,12 +429,15 @@ const MarketPage: React.FC = () => {
     setDeployBuildDeleteAck(false);
   };
 
-  const handleLocalInstall = async (server: MarketServer, config: ServerConfig) => {
+  const handleLocalInstall = async (
+    server: MarketServer,
+    payload: { name: string; config: ServerConfig },
+  ) => {
     try {
       setInstalling(true);
-      const success = await installLocalServer(server, config);
+      const success = await installLocalServer(server, payload);
       if (success) {
-        showToast(t('market.installSuccess', { serverName: server.display_name }), 'success');
+        showToast(t('market.installSuccess', { serverName: payload.name || server.display_name }), 'success');
       }
     } finally {
       setInstalling(false);

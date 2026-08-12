@@ -13,7 +13,7 @@ import { ServerConfig } from '@/types';
 interface MarketServerDetailProps {
   server: MarketServer;
   onBack: () => void;
-  onInstall: (server: MarketServer, config: ServerConfig) => void;
+  onInstall: (server: MarketServer, payload: { name: string; config: ServerConfig }) => void;
   installLabel?: string;
   canInstall?: boolean;
   installConfig?: ServerConfig;
@@ -270,7 +270,7 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
   const proceedWithInstall = async (payload: any) => {
     try {
       setError(null);
-      onInstall(server, payload.config);
+      onInstall(server, payload);
       setModalVisible(false);
     } catch (err) {
       console.error('Error installing server:', err);
