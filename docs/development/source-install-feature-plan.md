@@ -391,6 +391,181 @@ Extract from the existing file:
 
 ---
 
+## Testing
+
+The project has comprehensive tests (`tests/`) for all backend services and controllers, and frontend unit tests (`tests/frontend/`). This feature **must follow the same pattern**. Tests are written in Jest + ts-jest (ESM mode). See `jest.config.cjs` for setup.
+
+---
+
+### Tests to delete / replace
+
+| File | Action | Reason |
+|------|--------|--------|
+| `tests/services/sourceInstallService.test.ts` | **Replace** with `tests/services/buildRunService.test.ts` | Imports non-existent `sourceInstallService.js`; logic has moved to `deployBuildService.ts` |
+
+---
+
+### New backend tests
+
+#### `tests/services/buildRunService.test.ts`
+Replaces the broken sourceInstallService test. Tests the pure, side-effect-free functions in `deployBuildService.ts`:
+
+```
+analyzeRepository()
+  ✓ detects node engine when package.json present at root
+  ✓ detects python engine when pyproject.toml present at root
+  ✓ detects python engine when requirements.txt present at root
+  ✓ detects docker engine when Dockerfile present, no package.json
+  ✓ returns 'unknown' engine when no known files found
+  ✓ detects node engine from subdir when root has no package.json (monorepo)
+  ✓ returns subdir candidates for monorepo repos
+  ✓ falls back to 'unknown' on GitHub API error (network timeout)
+
+generatePlan()
+  ✓ node plan includes clone + npm install + npm run build steps (not start)
+  ✓ node plan omits build step when no "build" script in package.json
+  ✓ python/uv plan includes clone + uv sync steps
+  ✓ python/pip plan includes clone + pip install steps
+  ✓ plan uses subdir as cwd for install/build steps when subdir set
+  ✓ plan uses custom override when plan input provided
+  ✓ plan does NOT include any background:true step
+  ✓ plan does NOT include start step
+
+detectStartCommand() [new function - F1]
+  ✓ node: returns scripts.start value when present
+  ✓ node: returns bin entry path when no scripts.start
+  ✓ node: returns "node <main>" when only main field present
+  ✓ node: returns fallback "node index.js" when nothing found
+  ✓ python: returns first pyproject.toml script entry name
+  ✓ python: returns "uv run <script>" when uv.lock present
+  ✓ python: returns "python3 main.py" when main.py present
+  ✓ python: returns fallback when nothing found
+```
+
+Mock strategy: `jest.mock('axios')` for GitHub API calls (same as original broken test).  
+No filesystem or child_process spawning in these tests — pure logic only.
+
+#### `tests/controllers/buildRunController.test.ts`
+Pattern: same as `tests/controllers/serverController.test.ts` — mock service functions, test HTTP behavior.
+
+```
+previewDeployBuildHandler
+  ✓ returns 403 when non-admin calls preview
+  ✓ returns 400 when repositoryUrl missing
+  ✓ returns 200 with plan on valid input
+  ✓ returns 500 on service error
+
+createDeployBuildHandler
+  ✓ returns 403 when non-admin
+  ✓ returns 400 when repositoryUrl missing
+  ✓ returns 202 with job on valid input
+  ✓ fires executeDeployBuildJob async (fire-and-forget)
+
+getDeployBuildJobHandler
+  ✓ returns 403 when non-admin
+  ✓ returns 404 when job not found
+  ✓ returns 200 with job data
+
+retryDeployBuildHandler
+  ✓ returns 403 when non-admin
+  ✓ returns 404 when job not found
+  ✓ returns 202 with retried job
+
+DELETE /build-runs/:runId (deinstall)
+  ✓ returns 403 when non-admin
+  ✓ returns 404 when job not found
+  ✓ returns 200 on success
+```
+
+#### `tests/services/marketService.customServers.test.ts`
+Currently no tests exist for `marketService.ts` custom server CRUD. Add:
+
+```
+registerCustomServer()
+  ✓ creates entry in custom-servers.json with correct shape
+  ✓ auto-adds "Custom" tag
+  ✓ derives tags from repository URL
+  ✓ derives GitHub owner from URL
+  ✓ uses 'latest' when no version provided
+  ✓ trims version string
+
+updateCustomServer()
+  ✓ updates repositoryUrl
+  ✓ renames entry when newServerName provided
+  ✓ removes old key and inserts new key on rename
+  ✓ throws when serverName not found
+
+deleteCustomServer()
+  ✓ removes entry from custom-servers.json
+  ✓ throws when serverName not found
+
+getCustomServers()
+  ✓ returns empty object when file missing
+  ✓ merges into market servers list
+  ✓ always sets is_official: false
+  ✓ always adds "Custom" tag
+```
+
+Mock strategy: mock `fs.readFileSync` / `fs.writeFileSync` — no real filesystem I/O.
+
+---
+
+### New frontend tests
+
+#### `tests/frontend/customServerVariants.test.ts`
+
+```
+filterVariantsByRepoUrl()
+  ✓ returns all entries with same repository.url excluding self
+  ✓ returns empty array when no other entries share same URL
+  ✓ handles undefined repository.url gracefully
+  ✓ is case-insensitive for URL comparison
+```
+
+#### `tests/frontend/detectStartCommand.test.ts`
+If `detectStartCommand` is extracted as a pure utility (recommended):
+
+```
+  ✓ same cases as backend (see above) — ensures frontend prefill logic is correct
+  ✓ normalises bin path (removes leading ./)
+```
+
+#### `tests/frontend/buildRunPolling.test.ts`
+
+```
+isFinalBuildStatus()
+  ✓ returns true for: succeeded, failed, prerequisite_error, clone_error,
+      install_error, build_error, startup_error, port_error, network_error,
+      deinstalled
+  ✓ returns false for: queued, running, deleting
+```
+
+---
+
+### What is explicitly NOT tested (and why)
+
+| Scope | Reason |
+|-------|--------|
+| `executeDeployBuildJob()` end-to-end | Spawns real child processes — not suitable for unit tests. Would require integration test with a real repo clone, too slow and fragile for CI. |
+| `checkTooling()` actual tool detection | Depends on system-installed tools (node, python3, uv). Tested manually against real container. |
+| React component rendering | No React testing library in project — consistent with existing test suite which tests only pure functions and utils, not components. |
+| GitHub API live calls | Always mocked via `jest.mock('axios')` |
+
+---
+
+### Testing in implementation phases
+
+| Phase | Tests written |
+|-------|--------------|
+| Phase 1 (bug fixes) | Fix + rename `sourceInstallService.test.ts` → `buildRunService.test.ts` with corrected imports |
+| Phase 2 (core features) | Add `detectStartCommand` cases to `buildRunService.test.ts`; add `isFinalBuildStatus` test |
+| Phase 2 (F3 subdir) | Add monorepo detection cases to `buildRunService.test.ts` |
+| Phase 2 (controller) | Add `buildRunController.test.ts` |
+| Phase 2 (market service) | Add `marketService.customServers.test.ts` |
+| Phase 3 (frontend utils) | Add `customServerVariants.test.ts`, `detectStartCommand.test.ts` |
+
+---
+
 ## Artifacts to Remove
 
 | File / Code | Action |
