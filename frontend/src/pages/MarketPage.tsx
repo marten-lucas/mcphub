@@ -116,6 +116,19 @@ const MarketPage: React.FC = () => {
   const [deployBuildConfirmPlan, setDeployBuildConfirmPlan] = useState<any>(null);
   const [deployBuildDeleteAck, setDeployBuildDeleteAck] = useState(false);
 
+  const isCustomMarketServer = (server: MarketServer) =>
+    (server.categories || []).some((category) => category.toLowerCase() === 'custom') ||
+    Boolean(server.repository?.url);
+
+  const normalizeRepoUrl = (repositoryUrl: string): string => {
+    return repositoryUrl
+      .trim()
+      .replace(/^git@/, '')
+      .replace(/^ssh:\/\//, 'https://')
+      .replace(/\.git$/i, '')
+      .replace(/\/+$/, '');
+  };
+
   const selectedBuildRunFilters = useMemo<BuildRunFilters | undefined>(() => {
     if (
       currentTab !== 'local'
@@ -499,10 +512,6 @@ const MarketPage: React.FC = () => {
     openDeployBuildModal(repoUrl, serverName);
   };
 
-  const isCustomMarketServer = (server: MarketServer) =>
-    (server.categories || []).some((category) => category.toLowerCase() === 'custom') ||
-    Boolean(server.repository?.url);
-
   const resetDeployBuildModal = useCallback(() => {
     setDeployBuildOpen(false);
     setDeployBuildRepo('');
@@ -728,15 +737,6 @@ const MarketPage: React.FC = () => {
 
     return ordered;
   })();
-
-  const normalizeRepoUrl = (repositoryUrl: string): string => {
-    return repositoryUrl
-      .trim()
-      .replace(/^git@/, '')
-      .replace(/^ssh:\/\//, 'https://')
-      .replace(/\.git$/i, '')
-      .replace(/\/+$/, '');
-  };
 
   const localVariants =
     currentTab === 'local' && selectedServer?.repository?.url
