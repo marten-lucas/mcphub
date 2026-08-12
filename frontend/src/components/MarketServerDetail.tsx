@@ -14,6 +14,8 @@ interface MarketServerDetailProps {
   server: MarketServer;
   onBack: () => void;
   onInstall: (server: MarketServer, config: ServerConfig) => void;
+  installLabel?: string;
+  canInstall?: boolean;
   installing?: boolean;
   isInstalled?: boolean;
   onDelete?: (serverName: string) => void;
@@ -32,6 +34,8 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
   server,
   onBack,
   onInstall,
+  installLabel = 'Install',
+  canInstall = true,
   installing = false,
   isInstalled = false,
   onDelete,
@@ -204,12 +208,19 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
         disabled: true,
         text: t('server.adding', { defaultValue: 'Adding...' }),
       };
+    } else if (!canInstall) {
+      return {
+        className:
+          'bg-gray-400 cursor-not-allowed px-4 py-2 rounded text-sm font-medium text-white',
+        disabled: true,
+        text: installLabel,
+      };
     } else {
       return {
         className:
           'hub-btn primary',
         disabled: false,
-        text: t('server.addServer'),
+        text: installLabel,
       };
     }
   };
@@ -586,7 +597,7 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
           <ServerForm
             onSubmit={handleSubmit}
             onCancel={toggleModal}
-            modalTitle={`${t('server.addServer')}: ${server.display_name}`}
+            modalTitle={`${installLabel}: ${server.display_name}`}
             formError={error}
             initialData={{
               name: server.name,

@@ -755,6 +755,10 @@ const MarketPage: React.FC = () => {
           }))
       : [];
 
+  const hasSuccessfulBuildForSelectedServer = deployBuildJobs.some(
+    (job) => job.status === 'succeeded',
+  );
+
   const showInlineDeploy = Boolean(
     selectedServer && currentTab === 'local' && isCustomMarketServer(selectedServer),
   );
@@ -777,6 +781,8 @@ const MarketPage: React.FC = () => {
           server={selectedServer}
           onBack={handleBackToList}
           onInstall={handleLocalInstall}
+          installLabel={showInlineDeploy ? 'Install' : undefined}
+          canInstall={!showInlineDeploy || hasSuccessfulBuildForSelectedServer}
           installing={installing}
           isInstalled={isServerInstalled(selectedServer.name)}
           variants={localVariants}
