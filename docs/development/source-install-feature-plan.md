@@ -619,34 +619,174 @@ processPid  // Remove: no process started during build
 
 ---
 
+## Deploy / Validation Loop
+
+After each phase the following sequence runs before starting the next phase:
+
+```
+1. git push origin feature/source-install-workflow       (from local dev machine)
+2. ssh ct303: bash /opt/mcphub/scripts/deploy-feature-branch.sh
+   → git pull + docker compose up -d --build
+3. Run Jest unit tests inside container:
+   docker exec mcphub npm test -- --testPathPattern=<relevant-test-files>
+4. Manual UI validation via browser (https://mcp.cloud.kiga-gramschatz.de)
+   → see phase-specific checklist below
+5. Only proceed to next phase if all checks pass
+```
+
+### Infrastructure prerequisite (fix before Phase 1)
+
+`deploy-builds` volume is currently **not mounted** in the running container.  
+The docker-compose.yml mounts a named volume `deploy-builds`, but `/var/lib/mcphub/deploy-builds`  
+inside the container is not visible from the host.
+
+Fix: add host-path mount to `docker-compose.yml` so build artifacts persist across redeploys:
+
+```yaml
+volumes:
+  - /opt/mcphub-data/deploy-builds:/var/lib/mcphub/deploy-builds
+```
+
+This also ensures that after `docker compose up --build` (redeploy), previously built repos are still available on disk and their Install buttons remain functional.
+
+### Tools available in container (verified)
+| Tool | Version |
+|------|---------|
+| node | v22.23.2 |
+| npm  | 10.9.8 |
+| git  | 2.47.3 |
+| python3 | 3.13.15 |
+| uv | 0.12.3 |
+| npx | ✅ |
+
+### Browser session
+The browser at `https://mcp.cloud.kiga-gramschatz.de` is shared and logged in as `admin`.  
+Used for all manual UI validation steps. No additional setup needed.
+
+### Test data (current state on server)
+- `custom-servers.json` already has one entry: `technitium-mcp-secure` (node/ts, no subdir) → **ideal Phase 1+2 test subject**
+- `deploy-build-jobs.json` exists in `/app/data/` (file-mode, no DB) → jobs persist across restarts
+
+---
+
 ## Implementation Order
 
 ### Phase 1 — Bug fixes (unblock all target repos)
-1. **B2** Remove background start steps from plan + execute
-2. **B3** Remove auto-register from executeDeployBuildJob
-3. **B1** Add `npm run build` step detection from package.json
-4. **B5** Fix `checkTooling` to actually spawn checks
-5. **B6** Fix polling stop on terminal status
-6. **B9/B10** Remove dead code (writeJobs, readJobs alias)
-7. **B11/B12** Move types to central files
+
+**Code changes:**
+1. **B0** Fix `deploy-builds` volume mount in `docker-compose.yml` (host path)
+2. **B2** Remove background start steps from plan + execute; remove `runBackgroundCommand`, `monitorBackgroundStart`, `verifyBackgroundHealthAfterStart`; remove `processPid` field
+3. **B3** Remove `registerServerFromInstall` auto-call from `executeDeployBuildJob`
+4. **B1** Add `npm run build` step detection from `package.json` (read after clone, before install)
+5. **B6** Fix polling stop on terminal status (`isFinalBuildStatus` helper)
+6. **B9/B10** Remove dead code (`writeJobs`, `readJobs` alias)
+7. **B11/B12** Move types to `src/types/index.ts` and `frontend/src/types/index.ts`
+
+**Tests:**
+- Rename + fix `sourceInstallService.test.ts` → `buildRunService.test.ts`
+- Add: `analyzeRepository` cases (node, python, docker, unknown)
+- Add: `generatePlan` — verifies no `background:true` step, build step present
+
+**Validation after Phase 1:**
+```
+Unit tests:
+  docker exec mcphub npm test -- --testPathPattern=buildRunService
+
+UI checks (browser, logged in as admin):
+  [ ] Market → Local → Custom → technitium-mcp-secure → Detail page loads
+  [ ] Click [Build/Detect] → plan appears, shows "npm install" + "npm run build" steps, NO "Start server" step
+  [ ] Click [Deploy/Build] → job starts, log shows clone → npm install → npm run build
+  [ ] Job reaches status "succeeded" (not "failed")
+  [ ] Build artifacts exist: docker exec mcphub ls /var/lib/mcphub/deploy-builds/
+  [ ] After redeploy (docker compose up --build): build artifacts still present (volume mount fix)
+  [ ] Job does NOT auto-register a server in Servers list
+  [ ] Polling stops after job reaches final status (no endless network requests in browser devtools)
+```
+
+---
 
 ### Phase 2 — Core new features
-8. **F1** Start-command detection from post-build package.json
-9. **F2** Prefilled ServerForm on Install click
-10. **F3** Subdir / Monorepo support (needed for authentik-mcp)
-11. **F5** Real checkTooling
+
+**Code changes:**
+8. **F1** `detectStartCommand()` — reads built `package.json`/`pyproject.toml` post-build, stores in `DeployBuildJob.detectedStartCommand`
+9. **F2** Prefilled `ServerForm` on [Install] click — opens same modal as Servers → Add Server
+10. **F3** Subdir support: `subdir` field in `AddCustomRepoModal`, `MarketServer.repository.subdir`, `DeployBuildJob.subdir`; monorepo detection in `analyzeRepository`; clone uses root, install/build cwd uses subdir
+11. **F5** Real `checkTooling` — actual `spawn` checks with clear error messages
+
+**Tests:**
+- Add `detectStartCommand` cases to `buildRunService.test.ts`
+- Add monorepo/subdir detection cases to `buildRunService.test.ts`
+- Add `isFinalBuildStatus` test to `buildRunPolling.test.ts`
+- Add `buildRunController.test.ts`
+- Add `marketService.customServers.test.ts`
+
+**Validation after Phase 2:**
+```
+Unit tests:
+  docker exec mcphub npm test -- --testPathPattern="buildRunService|buildRunController|marketService.custom|buildRunPolling"
+
+UI checks (browser):
+  [ ] technitium-mcp-secure: after succeeded build, [Install] button active in header
+  [ ] Click [Install] → ServerForm opens prefilled:
+        command: "node", args: ["dist/index.js"], cwd: /var/lib/mcphub/deploy-builds/technitium-...
+  [ ] Change name in form, submit → server appears in Servers list
+  [ ] Server connects successfully (status: connected)
+  [ ] Register second entry: same URL, subdir "nodejs/authentik-mcp" (or test with any subdir)
+      → appears as separate card in marketplace
+  [ ] Detail page shows "📁 <subdir>" badge
+  [ ] Variants section shows the other subdir entry
+  [ ] Build for subdir entry → cwd in log shows subdir path
+  [ ] checkTooling failure: temporarily break a tool name → clear error message in log
+```
+
+---
 
 ### Phase 3 — Modularization
-12. Extract `useCustomBuildRuns.ts` hook from MarketPage
-13. Create `frontend/src/components/custom/` sub-components
-14. Extract `CustomBuildRunList` and `CustomBuildRunLogViewer`
-15. Rename `DeployWizardSidepane` → `CustomBuildRunSidepane`
+
+**Code changes:**
+12. Extract `useCustomBuildRuns.ts` hook from `MarketPage.tsx`
+13. Create `frontend/src/components/custom/` with: `CustomServerDetail.tsx`, `CustomBuildRunSidepane.tsx` (rename), `CustomBuildRunList.tsx`, `CustomBuildRunLogViewer.tsx`, `CustomServerVariants.tsx`
+14. Extract `CustomServerActions.tsx` from `MarketServerDetail.tsx`
+15. `MarketPage.tsx`: remove all `deployBuild*` state, delegate to hook + components
+
+**Tests:**
+- Add `customServerVariants.test.ts` (frontend pure function)
+- Add `detectStartCommand.test.ts` (frontend pure function)
+
+**Validation after Phase 3:**
+```
+Unit tests:
+  docker exec mcphub npm test -- --testPathPattern="customServerVariants|detectStartCommand"
+
+UI checks (browser):
+  [ ] Full flow still works: Register → Detail → Build → Install
+  [ ] Variants section renders correctly for technitium (no variants: "No other variants")
+  [ ] Log viewer expands inline per build run row
+  [ ] MarketPage tab switching (local/cloud/registry) still works
+  [ ] No console errors in browser devtools
+```
+
+---
 
 ### Phase 4 — Cleanup
-16. Delete `tests/services/sourceInstallService.test.ts` or fix
-17. Rename API routes
-18. DB migration: add `detectedStartCommand`, `subdir`; remove `processPid`
-19. Remove artifacts listed above
+
+**Code changes:**
+16. Rename API routes (`/market/deploy/*` → `/api/market/build-runs/*`)
+17. DB migration: add `detected_start_command`, `subdir` columns; remove `process_pid`
+18. Remove all artifacts from "Artifacts to Remove" section
+19. Update `locales/en.json` with new wording (Build, Install, Register, etc.)
+
+**Validation after Phase 4:**
+```
+Unit tests (full suite):
+  docker exec mcphub npm test
+
+UI checks (browser):
+  [ ] Full end-to-end flow with new API paths works
+  [ ] All wording in UI matches terminology table (Build not Deploy, Install not Add Server, etc.)
+  [ ] No "Deploy" or "Deinstall" labels remaining in UI
+  [ ] Existing custom server entry (technitium) and its build runs still visible after migration
+```
 
 ---
 
