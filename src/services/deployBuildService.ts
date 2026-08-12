@@ -842,24 +842,6 @@ export const deinstallDeployBuildJob = async (jobId: string): Promise<DeployBuil
   await persistJob(nextJob);
 
   try {
-    // Remove server from MCP registry if it was successfully registered
-    if (job.status === 'succeeded') {
-      try {
-        const { removeServer } = await import('./mcpService.js');
-        await removeServer(job.serverName);
-        await updateJob(jobId, (currentJob) =>
-          addLogLine(currentJob, `Removed server '${job.serverName}' from registry.`),
-        );
-      } catch (serverError) {
-        await updateJob(jobId, (currentJob) =>
-          addLogLine(
-            currentJob,
-            `Warning: Failed to remove server from registry: ${serverError instanceof Error ? serverError.message : String(serverError)}`,
-          ),
-        );
-      }
-    }
-
     await fs.rm(nextJob.installDir, { recursive: true, force: true });
     return updateJob(jobId, (currentJob) => ({
       ...currentJob,
