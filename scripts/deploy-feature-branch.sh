@@ -46,7 +46,15 @@ fi
 if [ "$SHOULD_DEPLOY" = true ]; then
   # Remove legacy container started outside compose to avoid name conflict.
   docker rm -f mcphub >/dev/null 2>&1 || true
-  MCP_SETTINGS_PATH="$MCP_SETTINGS_PATH" CUSTOM_SERVERS_PATH="$CUSTOM_SERVERS_PATH" docker compose up -d --build
+  ENV_FILE="${REPO_DIR}/.env"
+  ENV_FILE_ARG=""
+  if [ -f "$ENV_FILE" ]; then
+    ENV_FILE_ARG="--env-file $ENV_FILE"
+  fi
+  DEPLOY_BUILDS_PATH="${STATE_DIR}/deploy-builds" \
+  MCP_SETTINGS_PATH="$MCP_SETTINGS_PATH" \
+  CUSTOM_SERVERS_PATH="$CUSTOM_SERVERS_PATH" \
+  docker compose $ENV_FILE_ARG up -d --build
   echo "Deployed commit: $(git rev-parse --short HEAD)"
 else
   echo "No new commit on $BRANCH; skipping redeploy"
