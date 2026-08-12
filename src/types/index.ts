@@ -37,7 +37,6 @@ export interface MarketServerRepository {
   type: string;
   url: string;
   subdir?: string;
-  subdir?: string;
 }
 
 export interface MarketServerAuthor {
