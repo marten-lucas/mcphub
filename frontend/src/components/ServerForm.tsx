@@ -67,6 +67,7 @@ const ServerForm = ({
     description: (initialData && initialData.config && initialData.config.description) || '',
     url: (initialData && initialData.config && initialData.config.url) || '',
     command: (initialData && initialData.config && initialData.config.command) || '',
+    cwd: (initialData && initialData.config && initialData.config.cwd) || '',
     arguments:
       initialData && initialData.config && initialData.config.args
         ? Array.isArray(initialData.config.args)

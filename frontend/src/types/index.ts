@@ -349,6 +349,7 @@ export interface ServerFormData {
   description?: string;
   url: string;
   command: string;
+  cwd?: string;
   arguments: string;
   args?: string[]; // Added explicit args field
   type?: 'stdio' | 'sse' | 'streamable-http' | 'openapi'; // Added type field with openapi support

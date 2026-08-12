@@ -190,6 +190,7 @@ export const buildServerPayload = ({
   } else {
     config.command = formData.command.trim();
     config.args = formData.args;
+    config.cwd = formData.cwd?.trim() || undefined;
     config.env = env;
   }
 
