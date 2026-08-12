@@ -85,6 +85,12 @@ interface DeployBuildRequest extends PreviewInstallInput {
   plan?: DeployBuildPlanInput;
 }
 
+interface DeployBuildJobFilters {
+  serverName?: string;
+  repositoryUrl?: string;
+  subdir?: string;
+}
+
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 const JOBS_FILE = path.join(DATA_DIR, 'deploy-build-jobs.json');
 const INSTALL_ROOT = path.resolve(process.env.MCPHUB_DEPLOY_BUILD_ROOT || '/var/lib/mcphub/deploy-builds');
@@ -171,6 +177,64 @@ const loadJobs = async (): Promise<DeployBuildJob[]> => {
   await ensureStorage();
   const raw = await fs.readFile(JOBS_FILE, 'utf8');
   return JSON.parse(raw) as DeployBuildJob[];
+};
+
+const writeAllJobs = async (jobs: DeployBuildJob[]): Promise<void> => {
+  await ensureStorage();
+  await fs.writeFile(JOBS_FILE, JSON.stringify(jobs, null, 2), 'utf8');
+};
+
+const normalizeRepositoryUrl = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  try {
+    const parsedUrl = new URL(trimmed.replace(/^git@/, '').replace(/^ssh:\/\//, 'https://'));
+    const host = parsedUrl.hostname.toLowerCase();
+    const normalizedPath = parsedUrl.pathname.replace(/\.git$/i, '').replace(/\/+$/, '');
+    return `${host}${normalizedPath}`.toLowerCase();
+  } catch {
+    const scpLikeMatch = trimmed.match(/^(?:[^@]+@)?([^:]+):(.+)$/);
+    if (scpLikeMatch) {
+      return `${scpLikeMatch[1].toLowerCase()}/${scpLikeMatch[2]}`
+        .replace(/\.git$/i, '')
+        .replace(/\/+$/, '')
+        .toLowerCase();
+    }
+    return trimmed.replace(/\.git$/i, '').replace(/\/+$/, '').toLowerCase();
+  }
+};
+
+const filterDeployBuildJobs = (
+  jobs: DeployBuildJob[],
+  filters: DeployBuildJobFilters,
+): DeployBuildJob[] => {
+  const serverNameFilter = filters.serverName?.trim();
+  const subdirFilter = filters.subdir?.trim();
+  const normalizedRepoFilter = filters.repositoryUrl
+    ? normalizeRepositoryUrl(filters.repositoryUrl)
+    : '';
+
+  return jobs.filter((job) => {
+    if (serverNameFilter && job.serverName !== serverNameFilter) {
+      return false;
+    }
+
+    if (subdirFilter && (job.subdir || '').trim() !== subdirFilter) {
+      return false;
+    }
+
+    if (normalizedRepoFilter) {
+      const normalizedJobRepo = normalizeRepositoryUrl(job.repositoryUrl);
+      if (normalizedJobRepo !== normalizedRepoFilter) {
+        return false;
+      }
+    }
+
+    return true;
+  });
 };
 
 const persistJob = async (job: DeployBuildJob): Promise<void> => {
@@ -684,8 +748,9 @@ export const createDeployBuildJob = async (input: DeployBuildRequest): Promise<D
   return job;
 };
 
-export const getDeployBuildJobs = async (): Promise<DeployBuildJob[]> => {
-  return loadJobs();
+export const getDeployBuildJobs = async (filters: DeployBuildJobFilters = {}): Promise<DeployBuildJob[]> => {
+  const jobs = await loadJobs();
+  return filterDeployBuildJobs(jobs, filters);
 };
 
 export const getDeployBuildJob = async (jobId: string): Promise<DeployBuildJob | null> => {
@@ -725,6 +790,32 @@ export const registerServerFromInstall = async (jobId: string): Promise<boolean>
     console.error('Failed to register server from install job', { jobId, error });
   }
   return false;
+};
+
+export const deleteDeployBuildJobsForServer = async (serverName: string): Promise<number> => {
+  const normalizedServerName = serverName.trim();
+  if (!normalizedServerName) {
+    return 0;
+  }
+
+  const allJobs = await loadJobs();
+  const jobsToDelete = allJobs.filter((job) => job.serverName === normalizedServerName);
+  if (jobsToDelete.length === 0) {
+    return 0;
+  }
+
+  await Promise.allSettled(
+    jobsToDelete.map((job) => fs.rm(job.installDir, { recursive: true, force: true })),
+  );
+
+  if (isDatabaseMode()) {
+    await getDeployJobRepository().delete(jobsToDelete.map((job) => job.id));
+    return jobsToDelete.length;
+  }
+
+  const remainingJobs = allJobs.filter((job) => job.serverName !== normalizedServerName);
+  await writeAllJobs(remainingJobs);
+  return jobsToDelete.length;
 };
 
 export const deinstallDeployBuildJob = async (jobId: string): Promise<DeployBuildJob | null> => {

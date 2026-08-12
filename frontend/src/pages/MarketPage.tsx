@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Search, AlertCircle, X, ChevronDown } from 'lucide-react';
@@ -8,7 +8,6 @@ import {
   ServerConfig,
   RegistryServerEntry,
   RegistryServerData,
-  isFinalBuildStatus,
 } from '@/types';
 import { useMarketData } from '@/hooks/useMarketData';
 import { useCloudData } from '@/hooks/useCloudData';
@@ -26,7 +25,7 @@ import MCPRouterApiKeyError from '@/components/MCPRouterApiKeyError';
 import AddCustomRepoModal from '@/components/AddCustomRepoModal';
 import Pagination from '@/components/ui/Pagination';
 import CursorPagination from '@/components/ui/CursorPagination';
-import { useCustomBuildRuns } from '@/hooks/useCustomBuildRuns';
+import { BuildRunFilters, useCustomBuildRuns } from '@/hooks/useCustomBuildRuns';
 
 const MarketPage: React.FC = () => {
   const { t } = useTranslation();
@@ -116,6 +115,24 @@ const MarketPage: React.FC = () => {
   const [deployBuildConfirmOpen, setDeployBuildConfirmOpen] = useState(false);
   const [deployBuildConfirmPlan, setDeployBuildConfirmPlan] = useState<any>(null);
   const [deployBuildDeleteAck, setDeployBuildDeleteAck] = useState(false);
+
+  const selectedBuildRunFilters = useMemo<BuildRunFilters | undefined>(() => {
+    if (
+      currentTab !== 'local'
+      || !selectedServer
+      || !isCustomMarketServer(selectedServer)
+      || !selectedServer.repository?.url
+    ) {
+      return undefined;
+    }
+
+    return {
+      serverName: selectedServer.name,
+      repositoryUrl: selectedServer.repository.url,
+      subdir: selectedServer.repository.subdir,
+    };
+  }, [currentTab, selectedServer]);
+
   const {
     jobs: deployBuildJobs,
     selectedJobId: deployBuildSelectedJobId,
@@ -126,7 +143,7 @@ const MarketPage: React.FC = () => {
     retryJob: retryBuildJob,
     deinstallJob: deinstallBuildJob,
     reloadJob: reloadBuildJob,
-  } = useCustomBuildRuns();
+  } = useCustomBuildRuns(selectedBuildRunFilters);
   const [installedCloudServers, setInstalledCloudServers] = useState<Set<string>>(new Set());
   const [installedRegistryServers, setInstalledRegistryServers] = useState<Set<string>>(new Set());
   const [addCustomRepoModalOpen, setAddCustomRepoModalOpen] = useState(false);
@@ -439,18 +456,18 @@ const MarketPage: React.FC = () => {
   const handleRetryDeployBuildJob = async (jobId: string) => {
     try {
       await retryBuildJob(jobId);
-      showToast('Deployment retry started.', 'success');
+      showToast('Build retry started.', 'success');
     } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Failed to retry installation', 'error');
+      showToast(error instanceof Error ? error.message : 'Failed to retry build', 'error');
     }
   };
 
   const handleDeinstallDeployBuildJob = async (jobId: string) => {
     try {
       await deinstallBuildJob(jobId);
-      showToast('Deployment removal started.', 'success');
+      showToast('Build removal started.', 'success');
     } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Failed to deinstall installation', 'error');
+      showToast(error instanceof Error ? error.message : 'Failed to remove build', 'error');
     }
   };
 
@@ -582,12 +599,12 @@ const MarketPage: React.FC = () => {
       if (installResult.data?.id) {
         await reloadBuildJob(installResult.data.id);
       }
-      showToast(`Deployment started for ${deployBuildConfirmPlan.serverName}.`, 'success');
+      showToast(`Build started for ${deployBuildConfirmPlan.serverName}.`, 'success');
       setDeployBuildConfirmOpen(false);
       setDeployBuildConfirmPlan(null);
       setDeployBuildDeleteAck(false);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Failed to start deployment', 'error');
+      showToast(error instanceof Error ? error.message : 'Failed to start build', 'error');
     } finally {
       setDeployBuildSubmitting(false);
     }
@@ -721,18 +738,20 @@ const MarketPage: React.FC = () => {
       .replace(/\/+$/, '');
   };
 
-  const localBuildTemplateServers =
+  const localVariants =
     currentTab === 'local' && selectedServer?.repository?.url
-      ? deployBuildJobs
-          .filter(
-            (job: any) =>
-              job?.repositoryUrl &&
-              normalizeRepoUrl(job.repositoryUrl) === normalizeRepoUrl(selectedServer.repository.url) &&
-              job.status === 'succeeded',
+      ? allLocalServers
+          .filter((entry) =>
+            isCustomMarketServer(entry)
+            && Boolean(entry.repository?.url)
+            && normalizeRepoUrl(entry.repository.url) === normalizeRepoUrl(selectedServer.repository!.url)
+            && entry.name !== selectedServer.name,
           )
-          .map((job: any) => ({
-            name: job.serverName,
-            version: job.version,
+          .map((entry) => ({
+            name: entry.name,
+            displayName: entry.display_name || entry.name,
+            subdir: entry.repository?.subdir,
+            version: entry.version,
           }))
       : [];
 
@@ -760,7 +779,8 @@ const MarketPage: React.FC = () => {
           onInstall={handleLocalInstall}
           installing={installing}
           isInstalled={isServerInstalled(selectedServer.name)}
-          buildTemplateServers={localBuildTemplateServers}
+          variants={localVariants}
+          onSelectVariant={(variantName) => navigate(`/market/${encodeURIComponent(variantName)}?tab=local`)}
           deploymentSection={
             showInlineDeploy ? (
               <CustomBuildRunSidepane
@@ -798,7 +818,7 @@ const MarketPage: React.FC = () => {
               />
             ) : null
           }
-          onDelete={(serverName) => {
+          onDelete={() => {
             setSelectedServer(null);
             void fetchLocalMarketServers();
             setSearchParams((prev) => {

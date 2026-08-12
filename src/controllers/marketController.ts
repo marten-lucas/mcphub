@@ -11,7 +11,9 @@ import {
   registerCustomServer,
   updateCustomServer,
   deleteCustomServer,
+  isSupportedRepositoryUrl,
 } from '../services/marketService.js';
+import { deleteDeployBuildJobsForServer } from '../services/deployBuildService.js';
 
 // Get all market servers
 export const getAllMarketServers = (_: Request, res: Response): void => {
@@ -169,10 +171,15 @@ export const registerCustomMarketServer = (req: Request, res: Response): void =>
       return;
     }
 
-    // Validate URL format
-    try {
-      new URL(repositoryUrl);
-    } catch {
+    if (typeof serverName !== 'string' || !serverName.trim()) {
+      res.status(400).json({
+        success: false,
+        message: 'serverName must be a non-empty string',
+      });
+      return;
+    }
+
+    if (typeof repositoryUrl !== 'string' || !isSupportedRepositoryUrl(repositoryUrl)) {
       res.status(400).json({
         success: false,
         message: 'Invalid repository URL format',
@@ -184,7 +191,13 @@ export const registerCustomMarketServer = (req: Request, res: Response): void =>
       ? tags.filter((tag: unknown): tag is string => typeof tag === 'string' && tag.trim().length > 0)
       : [];
 
-    const newServer = registerCustomServer(serverName, repositoryUrl, parsedTags, version, typeof subdir === 'string' ? subdir : undefined);
+    const newServer = registerCustomServer(
+      serverName,
+      repositoryUrl,
+      parsedTags,
+      version,
+      typeof subdir === 'string' ? subdir : undefined,
+    );
     const response: ApiResponse = {
       success: true,
       data: newServer,
@@ -193,9 +206,11 @@ export const registerCustomMarketServer = (req: Request, res: Response): void =>
     res.status(201).json(response);
   } catch (error) {
     console.error('Failed to register custom server:', error);
-    res.status(500).json({
+    const message = error instanceof Error ? error.message : 'Failed to register custom server';
+    const statusCode = message.includes('already exists') ? 409 : 500;
+    res.status(statusCode).json({
       success: false,
-      message: 'Failed to register custom server',
+      message,
     });
   }
 };
@@ -222,17 +237,12 @@ export const updateCustomMarketServer = (req: Request, res: Response): void => {
       return;
     }
 
-    // Validate URL format if provided
-    if (repositoryUrl) {
-      try {
-        new URL(repositoryUrl);
-      } catch {
-        res.status(400).json({
-          success: false,
-          message: 'Invalid repository URL format',
-        });
-        return;
-      }
+    if (typeof repositoryUrl === 'string' && repositoryUrl.trim() && !isSupportedRepositoryUrl(repositoryUrl)) {
+      res.status(400).json({
+        success: false,
+        message: 'Invalid repository URL format',
+      });
+      return;
     }
 
     const parsedTags = Array.isArray(tags)
@@ -256,7 +266,8 @@ export const updateCustomMarketServer = (req: Request, res: Response): void => {
   } catch (error) {
     console.error('Failed to update custom server:', error);
     const message = error instanceof Error ? error.message : 'Failed to update custom server';
-    res.status(error instanceof Error && message.includes('not found') ? 404 : 500).json({
+    const statusCode = message.includes('not found') ? 404 : message.includes('already exists') ? 409 : 500;
+    res.status(statusCode).json({
       success: false,
       message,
     });
@@ -264,7 +275,7 @@ export const updateCustomMarketServer = (req: Request, res: Response): void => {
 };
 
 // Delete a custom MCP server
-export const deleteCustomMarketServer = (req: Request, res: Response): void => {
+export const deleteCustomMarketServer = async (req: Request, res: Response): Promise<void> => {
   try {
     const { serverName } = req.params;
 
@@ -276,9 +287,19 @@ export const deleteCustomMarketServer = (req: Request, res: Response): void => {
       return;
     }
 
-    deleteCustomServer(serverName);
+    const deletedServer = deleteCustomServer(serverName);
+    const cascadeBuildRuns =
+      typeof req.query.cascadeBuildRuns === 'string'
+      && ['1', 'true', 'yes'].includes(req.query.cascadeBuildRuns.toLowerCase());
+    const removedBuildRuns = cascadeBuildRuns
+      ? await deleteDeployBuildJobsForServer(deletedServer.name)
+      : 0;
     const response: ApiResponse = {
       success: true,
+      data: {
+        cascadeBuildRuns,
+        removedBuildRuns,
+      },
       message: 'Custom server deleted successfully',
     };
     res.json(response);
@@ -291,4 +312,3 @@ export const deleteCustomMarketServer = (req: Request, res: Response): void => {
     });
   }
 };
-

@@ -153,6 +153,24 @@ const deriveTagsFromRepositoryUrl = (repositoryUrl: string): string[] => {
   }
 };
 
+export const isSupportedRepositoryUrl = (repositoryUrl: string): boolean => {
+  const trimmed = repositoryUrl.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  try {
+    const parsedUrl = new URL(trimmed);
+    if (parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:' || parsedUrl.protocol === 'ssh:') {
+      return true;
+    }
+  } catch {
+    // fall through to scp-style URL check
+  }
+
+  return /^(?:[^@\s]+@)?[^:\s]+:[^/\s]+\/[^/\s]+(?:\.git)?(?:\/)?$/i.test(trimmed);
+};
+
 // Register a custom server from repository URL
 export const registerCustomServer = (
   serverName: string,
@@ -162,13 +180,21 @@ export const registerCustomServer = (
   subdir?: string,
 ): MarketServer => {
   const customServers = getCustomServers();
+  const normalizedServerName = serverName.trim();
+  if (!normalizedServerName) {
+    throw new Error('Custom server name is required');
+  }
+  if (customServers[normalizedServerName]) {
+    throw new Error(`Custom server "${normalizedServerName}" already exists`);
+  }
+
   const resolvedTags = ensureCustomTag(tags.length > 0 ? tags : deriveTagsFromRepositoryUrl(repositoryUrl));
   const resolvedVersion = typeof version === 'string' && version.trim() ? version.trim() : 'latest';
 
   // Create a new market server entry for custom repo
   const newServer: MarketServer = {
-    name: serverName,
-    display_name: serverName.charAt(0).toUpperCase() + serverName.slice(1).replace(/-/g, ' '),
+    name: normalizedServerName,
+    display_name: normalizedServerName.charAt(0).toUpperCase() + normalizedServerName.slice(1).replace(/-/g, ' '),
     description: `Custom MCP server from ${repositoryUrl}`,
     repository: {
       type: 'git-repository',
@@ -188,7 +214,7 @@ export const registerCustomServer = (
     version: resolvedVersion,
   };
 
-  customServers[serverName] = newServer;
+  customServers[normalizedServerName] = newServer;
 
   // Write back to file
   const customPath = getCustomServersPath();
@@ -278,7 +304,7 @@ export const updateCustomServer = (
 };
 
 // Delete a custom server
-export const deleteCustomServer = (serverName: string): void => {
+export const deleteCustomServer = (serverName: string): MarketServer => {
   const customServers = getCustomServers();
   const resolvedServerKey = resolveCustomServerKey(customServers, serverName);
 
@@ -286,11 +312,13 @@ export const deleteCustomServer = (serverName: string): void => {
     throw new Error(`Custom server "${serverName}" not found`);
   }
 
+  const deletedServer = customServers[resolvedServerKey];
   delete customServers[resolvedServerKey];
 
   // Write back to file
   const customPath = getCustomServersPath();
   fs.writeFileSync(customPath, JSON.stringify(customServers, null, 2), 'utf8');
+  return deletedServer;
 };
 
 

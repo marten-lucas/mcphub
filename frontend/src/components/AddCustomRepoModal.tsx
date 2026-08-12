@@ -83,6 +83,24 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
       .replace(/^refs\/tags\//i, '');
   };
 
+  const isSupportedRepositoryUrl = (value: string): boolean => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return false;
+    }
+
+    try {
+      const parsedUrl = new URL(trimmed);
+      if (parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:' || parsedUrl.protocol === 'ssh:') {
+        return true;
+      }
+    } catch {
+      // fall through to scp-style URL check
+    }
+
+    return /^(?:[^@\s]+@)?[^:\s]+:[^/\s]+\/[^/\s]+(?:\.git)?(?:\/)?$/i.test(trimmed);
+  };
+
   useEffect(() => {
     if (!isOpen) {
       return;
@@ -116,9 +134,7 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
       const resolvedVersion = versionInput.trim() || 'latest';
       const resolvedSubdir = subdirInput.trim();
 
-      try {
-        new URL(repositoryUrl);
-      } catch {
+      if (!isSupportedRepositoryUrl(repositoryUrl)) {
         setError('Invalid repository URL format');
         return;
       }

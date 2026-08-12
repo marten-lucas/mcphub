@@ -6,7 +6,6 @@ export interface MarketServerRepository {
   type: string;
   url: string;
   subdir?: string;
-  subdir?: string;
 }
 
 export interface MarketServerAuthor {
@@ -859,6 +858,7 @@ export interface BuildRun {
   id: string;
   repositoryUrl: string;
   serverName: string;
+  subdir?: string;
   version?: string;
   status: BuildRunStatus;
   createdAt: string;
@@ -871,4 +871,5 @@ export interface BuildRun {
   plan: BuildRunPlan;
   logs: string[];
   error?: string;
+  detectedStartCommand?: string;
 }

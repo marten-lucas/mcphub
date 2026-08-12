@@ -1,6 +1,6 @@
 import React from 'react';
-import { AlertTriangle, Check, Rocket, X } from 'lucide-react';
-import { BuildRun } from '@/types';
+import { AlertTriangle, Rocket, X } from 'lucide-react';
+import { BuildRun, BuildRunStatus } from '@/types';
 import CustomBuildRunLogViewer from '@/components/custom/CustomBuildRunLogViewer';
 
 type WizardJob = BuildRun;
@@ -78,6 +78,17 @@ const CustomBuildRunSidepane: React.FC<CustomBuildRunSidepaneProps> = ({
   onDeinstallJob,
 }) => {
   if (!open) return null;
+
+  const retryableStatuses = new Set<BuildRunStatus>([
+    'failed',
+    'prerequisite_error',
+    'clone_error',
+    'install_error',
+    'build_error',
+    'network_error',
+  ]);
+  const isRetryableBuildStatus = (status?: BuildRunStatus): boolean =>
+    Boolean(status && retryableStatuses.has(status));
 
   const containerClass = embedded ? 'w-full mt-6' : 'w-full lg:w-[33vw] lg:min-w-[33vw] lg:shrink-0';
   const panelClass = embedded
@@ -220,7 +231,7 @@ const CustomBuildRunSidepane: React.FC<CustomBuildRunSidepaneProps> = ({
             <section className="hub-card p-4 space-y-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-semibold text-[var(--hub-ink)]">Deploy</h3>
+                  <h3 className="text-sm font-semibold text-[var(--hub-ink)]">Build</h3>
                   <p className="text-sm text-[var(--hub-ink-3)] truncate">
                     {selectedJob?.serverName || serverName}{' '}
                     {selectedJob?.version ? `· ${selectedJob.version}` : version ? `· ${version}` : ''}
@@ -233,16 +244,16 @@ const CustomBuildRunSidepane: React.FC<CustomBuildRunSidepaneProps> = ({
 
               {selectedJob?.status === 'succeeded' ? (
                 <div className="rounded border border-green-200 bg-green-50 p-3 text-sm text-green-900">
-                  Build erfolgreich. The build template is ready for Add server.
+                  Build erfolgreich. Die Install-Konfiguration kann jetzt im Add-server-Dialog verwendet werden.
                 </div>
-              ) : selectedJob?.status === 'failed' ? (
+              ) : isRetryableBuildStatus(selectedJob?.status) ? (
                 <div className="flex gap-2 rounded border border-red-200 bg-red-50 p-3 text-sm text-red-900">
                   <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
-                  <div>{selectedJob.error || 'Deployment failed.'}</div>
+                  <div>{selectedJob?.error || 'Build failed.'}</div>
                 </div>
               ) : (
                 <div className="rounded border border-[var(--hub-line)] bg-[var(--hub-surface)] p-3 text-sm text-[var(--hub-ink-2)]">
-                  {submitting ? 'Starting deployment…' : 'Click Deploy to start the installation.'}
+                  {submitting ? 'Starting build…' : 'Click Build to start clone, install and compile.'}
                 </div>
               )}
 
@@ -256,7 +267,7 @@ const CustomBuildRunSidepane: React.FC<CustomBuildRunSidepaneProps> = ({
                   onClick={onConfirm}
                   disabled={submitting || !preview || !destructiveAck}
                 >
-                  {submitting ? 'Deploying…' : 'Deploy'}
+                  {submitting ? 'Building…' : 'Build'}
                 </button>
               </div>
               <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
@@ -264,7 +275,7 @@ const CustomBuildRunSidepane: React.FC<CustomBuildRunSidepaneProps> = ({
                   <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
                   <div className="space-y-2">
                     <p className="font-medium">
-                      This deploy will delete the target folder before cloning.
+                      This build will delete the target folder before cloning.
                     </p>
                     <label className="flex items-start gap-2">
                       <input
@@ -287,7 +298,7 @@ const CustomBuildRunSidepane: React.FC<CustomBuildRunSidepaneProps> = ({
 
           <section className="hub-card p-4">
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-[var(--hub-ink)]">Recent deployments</h3>
+              <h3 className="text-sm font-semibold text-[var(--hub-ink)]">Recent build runs</h3>
               <span className="text-[11px] text-[var(--hub-ink-3)]">{jobs.length}</span>
             </div>
             <div className="space-y-2">
@@ -306,14 +317,14 @@ const CustomBuildRunSidepane: React.FC<CustomBuildRunSidepaneProps> = ({
                     <div className="truncate text-[11px] text-[var(--hub-ink-3)]">{job.repositoryUrl}</div>
                   </button>
                   <div className="mt-2 flex gap-2">
-                    {job.status === 'failed' && (
+                    {isRetryableBuildStatus(job.status) && (
                       <button type="button" className="hub-btn ghost" onClick={() => onRetryJob(job.id)}>
                         Retry
                       </button>
                     )}
-                    {(job.status === 'succeeded' || job.status === 'failed' || job.status === 'deinstalled') && (
+                    {(job.status === 'succeeded' || isRetryableBuildStatus(job.status) || job.status === 'deinstalled') && (
                       <button type="button" className="hub-btn ghost" onClick={() => onDeinstallJob(job.id)}>
-                        Deinstall
+                        Remove build
                       </button>
                     )}
                   </div>

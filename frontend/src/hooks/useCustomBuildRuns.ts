@@ -1,11 +1,38 @@
-import { useCallback, useEffect, useState } from 'react';
-import { BuildRun, isFinalBuildStatus } from '@/types';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { BuildRun } from '@/types';
 import { apiDelete, apiGet, apiPost } from '@/utils/fetchInterceptor';
 
-export const useCustomBuildRuns = () => {
+export interface BuildRunFilters {
+  serverName?: string;
+  repositoryUrl?: string;
+  subdir?: string;
+}
+
+const buildRunsQuery = (filters?: BuildRunFilters): string => {
+  const params = new URLSearchParams();
+  if (filters?.serverName?.trim()) {
+    params.set('serverName', filters.serverName.trim());
+  }
+  if (filters?.repositoryUrl?.trim()) {
+    params.set('repositoryUrl', filters.repositoryUrl.trim());
+  }
+  if (filters?.subdir?.trim()) {
+    params.set('subdir', filters.subdir.trim());
+  }
+  const query = params.toString();
+  return query ? `?${query}` : '';
+};
+
+export const useCustomBuildRuns = (filters?: BuildRunFilters) => {
   const [jobs, setJobs] = useState<BuildRun[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [selectedJob, setSelectedJob] = useState<BuildRun | null>(null);
+
+  const queryString = useMemo(() => buildRunsQuery(filters), [
+    filters?.serverName,
+    filters?.repositoryUrl,
+    filters?.subdir,
+  ]);
 
   const reloadJob = useCallback(async (jobId: string) => {
     try {
@@ -14,7 +41,7 @@ export const useCustomBuildRuns = () => {
         setSelectedJob(result.data ?? null);
       }
     } catch (error) {
-      console.error('Failed to refresh deploy build job', error);
+      console.error('Failed to refresh build run', error);
     }
   }, []);
 
@@ -26,40 +53,39 @@ export const useCustomBuildRuns = () => {
         setSelectedJob(result.data ?? null);
       }
     } catch (error) {
-      console.error('Failed to fetch deploy build job', error);
+      console.error('Failed to fetch build run', error);
     }
   }, []);
 
   const loadJobs = useCallback(async () => {
     try {
-      const result = await apiGet('/market/build-runs');
-      if (result.success && Array.isArray(result.data)) {
-        setJobs(result.data);
+      const result = await apiGet(`/market/build-runs${queryString}`);
+      if (!result.success || !Array.isArray(result.data)) {
+        return;
+      }
 
-        if (selectedJobId) {
-          const nextSelected = result.data.find((job: BuildRun) => job.id === selectedJobId);
-          if (nextSelected) {
-            setSelectedJob(nextSelected);
-            void reloadJob(selectedJobId);
-          }
-        }
+      const nextJobs = result.data as BuildRun[];
+      setJobs(nextJobs);
+
+      if (!selectedJobId) {
+        return;
+      }
+
+      const nextSelected = nextJobs.find((job) => job.id === selectedJobId) ?? null;
+      setSelectedJob(nextSelected);
+      if (nextSelected) {
+        void reloadJob(selectedJobId);
       }
     } catch (error) {
-      console.error('Failed to load deploy build jobs', error);
+      console.error('Failed to load build runs', error);
     }
-  }, [reloadJob, selectedJobId]);
+  }, [queryString, reloadJob, selectedJobId]);
 
   useEffect(() => {
     void loadJobs();
 
-    const intervalId = window.setInterval(async () => {
-      await loadJobs();
-      setSelectedJob((current) => {
-        if (current && isFinalBuildStatus(current.status)) {
-          window.clearInterval(intervalId);
-        }
-        return current;
-      });
+    const intervalId = window.setInterval(() => {
+      void loadJobs();
     }, 5000);
 
     return () => window.clearInterval(intervalId);
@@ -69,27 +95,29 @@ export const useCustomBuildRuns = () => {
     try {
       const result = await apiPost(`/market/build-runs/${jobId}/retry`);
       if (!result.success) {
-        throw new Error(result.message || 'Failed to retry installation');
+        throw new Error(result.message || 'Failed to retry build run');
       }
       await openJob(result.data?.id ?? jobId);
+      await loadJobs();
     } catch (error) {
-      console.error('Failed to retry installation', error);
+      console.error('Failed to retry build run', error);
       throw error;
     }
-  }, [openJob]);
+  }, [loadJobs, openJob]);
 
   const deinstallJob = useCallback(async (jobId: string) => {
     try {
       const result = await apiDelete(`/market/build-runs/${jobId}`);
       if (!result.success) {
-        throw new Error(result.message || 'Failed to deinstall installation');
+        throw new Error(result.message || 'Failed to remove build');
       }
       await openJob(result.data?.id ?? jobId);
+      await loadJobs();
     } catch (error) {
-      console.error('Failed to deinstall installation', error);
+      console.error('Failed to remove build', error);
       throw error;
     }
-  }, [openJob]);
+  }, [loadJobs, openJob]);
 
   return {
     jobs,

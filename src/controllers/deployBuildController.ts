@@ -82,9 +82,14 @@ export const createDeployBuildHandler = async (req: Request, res: Response): Pro
   }
 };
 
-export const listDeployBuildJobsHandler = async (_req: Request, res: Response): Promise<void> => {
+export const listDeployBuildJobsHandler = async (req: Request, res: Response): Promise<void> => {
   try {
-    const jobs = await getDeployBuildJobs();
+    const serverName =
+      typeof req.query.serverName === 'string' ? req.query.serverName : undefined;
+    const repositoryUrl =
+      typeof req.query.repositoryUrl === 'string' ? req.query.repositoryUrl : undefined;
+    const subdir = typeof req.query.subdir === 'string' ? req.query.subdir : undefined;
+    const jobs = await getDeployBuildJobs({ serverName, repositoryUrl, subdir });
     res.json({ success: true, data: jobs });
   } catch (error) {
     res.status(500).json({ success: false, message: error instanceof Error ? error.message : 'Failed to list deployment jobs' });

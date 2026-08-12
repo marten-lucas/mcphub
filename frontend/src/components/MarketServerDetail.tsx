@@ -18,9 +18,12 @@ interface MarketServerDetailProps {
   isInstalled?: boolean;
   onDelete?: (serverName: string) => void;
   onEdit?: (server: MarketServer) => void;
+  onSelectVariant?: (serverName: string) => void;
   deploymentSection?: React.ReactNode;
-  buildTemplateServers?: Array<{
+  variants?: Array<{
     name: string;
+    displayName: string;
+    subdir?: string;
     version?: string;
   }>;
 }
@@ -33,8 +36,9 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
   isInstalled = false,
   onDelete,
   onEdit,
+  onSelectVariant,
   deploymentSection,
-  buildTemplateServers = [],
+  variants = [],
 }) => {
   const { t } = useTranslation();
   const { showToast } = useToast();
@@ -44,6 +48,7 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
   const [pendingPayload, setPendingPayload] = useState<any>(null);
   const [detectedVariables, setDetectedVariables] = useState<string[]>([]);
   const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
+  const [deleteCascadeBuildRuns, setDeleteCascadeBuildRuns] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [githubMeta, setGithubMeta] = useState<{ owner?: string; repo?: string; defaultBranch?: string; htmlUrl?: string } | null>(null);
   const [readmeContent, setReadmeContent] = useState<string | null>(null);
@@ -83,6 +88,7 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
     const loadRepositoryDetails = async () => {
       const repositoryUrl = server.repository?.url?.trim();
       const parsedRepository = repositoryUrl ? parseGitHubRepository(repositoryUrl) : null;
+      const normalizedSubdir = server.repository?.subdir?.trim().replace(/^\/+|\/+$/g, '');
 
       if (!parsedRepository) {
         if (!cancelled) {
@@ -128,6 +134,15 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
         }
 
         const readmeCandidates = [
+          ...(normalizedSubdir
+            ? [
+                `https://raw.githubusercontent.com/${parsedRepository.owner}/${parsedRepository.repo}/${resolvedMeta.defaultBranch}/${normalizedSubdir}/README.md`,
+                `https://raw.githubusercontent.com/${parsedRepository.owner}/${parsedRepository.repo}/${resolvedMeta.defaultBranch}/${normalizedSubdir}/README`,
+                `https://raw.githubusercontent.com/${parsedRepository.owner}/${parsedRepository.repo}/${resolvedMeta.defaultBranch}/${normalizedSubdir}/readme.md`,
+                `https://raw.githubusercontent.com/${parsedRepository.owner}/${parsedRepository.repo}/${resolvedMeta.defaultBranch}/${normalizedSubdir}/readme`,
+                `https://raw.githubusercontent.com/${parsedRepository.owner}/${parsedRepository.repo}/${resolvedMeta.defaultBranch}/${normalizedSubdir}/docs/README.md`,
+              ]
+            : []),
           `https://raw.githubusercontent.com/${parsedRepository.owner}/${parsedRepository.repo}/${resolvedMeta.defaultBranch}/README.md`,
           `https://raw.githubusercontent.com/${parsedRepository.owner}/${parsedRepository.repo}/${resolvedMeta.defaultBranch}/README`,
           `https://raw.githubusercontent.com/${parsedRepository.owner}/${parsedRepository.repo}/${resolvedMeta.defaultBranch}/readme.md`,
@@ -172,7 +187,7 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [server.repository?.url]);
+  }, [server.repository?.url, server.repository?.subdir]);
 
   // Helper function to determine button state
   const getButtonProps = () => {
@@ -264,9 +279,18 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
 
     setDeleting(true);
     try {
-      const response = await apiDelete(`/market/custom-servers/${encodeURIComponent(serverIdentifier)}`);
+      const query = deleteCascadeBuildRuns ? '?cascadeBuildRuns=true' : '';
+      const response = await apiDelete(`/market/custom-servers/${encodeURIComponent(serverIdentifier)}${query}`);
       if (response.success) {
-        showToast(`Custom server "${server.display_name || server.name || 'Custom server'}" deleted successfully`, 'success');
+        const removedBuildRuns = response.data?.removedBuildRuns;
+        const removalHint =
+          deleteCascadeBuildRuns && typeof removedBuildRuns === 'number'
+            ? ` (removed ${removedBuildRuns} build run${removedBuildRuns === 1 ? '' : 's'})`
+            : '';
+        showToast(
+          `Custom server "${server.display_name || server.name || 'Custom server'}" deleted successfully${removalHint}`,
+          'success',
+        );
         onDelete?.(serverIdentifier);
         onBack();
       } else {
@@ -278,6 +302,7 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
     } finally {
       setDeleting(false);
       setDeleteConfirmVisible(false);
+      setDeleteCascadeBuildRuns(false);
     }
   };
 
@@ -411,6 +436,49 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
 
       <p className="text-gray-700 mb-6">{server.description}</p>
 
+      {isCustomServer && (
+        <div className="mb-6 rounded border border-gray-200 bg-gray-50 p-4">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <h3 className="text-lg font-semibold text-gray-900">Varianten</h3>
+            <span className="text-sm text-gray-500">
+              {variants.length} Eintrag{variants.length === 1 ? '' : 'e'}
+            </span>
+          </div>
+          {variants.length > 0 ? (
+            <ul className="space-y-2">
+              {variants.map((entry) => (
+                <li
+                  key={entry.name}
+                  className="flex items-center justify-between gap-3 rounded border border-gray-200 bg-white px-3 py-2 text-sm"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate font-medium text-gray-900">{entry.displayName}</div>
+                    <div className="truncate text-xs text-gray-500">
+                      {entry.subdir?.trim() ? entry.subdir : 'repo root'}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {entry.version ? (
+                      <span className="text-xs text-gray-500">v{entry.version}</span>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="hub-btn ghost sm"
+                      onClick={() => onSelectVariant?.(entry.name)}
+                      disabled={!onSelectVariant}
+                    >
+                      View
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-gray-600">Keine weiteren Varianten für dieses Repository registriert.</p>
+          )}
+        </div>
+      )}
+
       <div className="mb-6">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-semibold">README</h3>
@@ -426,33 +494,6 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
           )}
         </div>
 
-        {isCustomServer && (
-          <div className="mb-6 rounded border border-gray-200 bg-gray-50 p-4">
-            <div className="flex items-center justify-between gap-3 mb-3">
-              <h3 className="text-lg font-semibold text-gray-900">Build template</h3>
-              <span className="text-sm text-gray-500">
-                {buildTemplateServers.length} server{buildTemplateServers.length === 1 ? '' : 's'}
-              </span>
-            </div>
-            {buildTemplateServers.length > 0 ? (
-              <ul className="space-y-2">
-                {buildTemplateServers.map((entry) => (
-                  <li
-                    key={entry.name}
-                    className="flex items-center justify-between gap-3 rounded border border-gray-200 bg-white px-3 py-2 text-sm"
-                  >
-                    <span className="font-medium text-gray-900">{entry.name}</span>
-                    {entry.version ? (
-                      <span className="text-xs text-gray-500">v{entry.version}</span>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-gray-600">No servers are using this build template yet.</p>
-            )}
-          </div>
-        )}
         {readmeLoading ? (
           <div className="rounded border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
             Loading README from GitHub...
@@ -520,7 +561,10 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
           )}
           {isCustomServer && (
             <button
-              onClick={() => setDeleteConfirmVisible(true)}
+              onClick={() => {
+                setDeleteCascadeBuildRuns(false);
+                setDeleteConfirmVisible(true);
+              }}
               disabled={deleting}
               className="px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded border border-red-200 disabled:opacity-50"
             >
@@ -622,9 +666,22 @@ const MarketServerDetail: React.FC<MarketServerDetailProps> = ({
             <p className="text-gray-600 mb-4">
               Are you sure you want to delete the custom repository "{server.display_name}"? This action cannot be undone.
             </p>
+            <label className="mb-4 flex items-start gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={deleteCascadeBuildRuns}
+                onChange={(e) => setDeleteCascadeBuildRuns(e.target.checked)}
+                disabled={deleting}
+              />
+              <span>Also remove associated build runs for this custom repository.</span>
+            </label>
             <div className="flex justify-end space-x-3">
               <button
-                onClick={() => setDeleteConfirmVisible(false)}
+                onClick={() => {
+                  setDeleteConfirmVisible(false);
+                  setDeleteCascadeBuildRuns(false);
+                }}
                 className="hub-btn"
                 disabled={deleting}
               >
