@@ -54,17 +54,118 @@ Market → Local Installation → Custom
               → POST /api/servers  (existing endpoint, no changes needed)
 ```
 
-### Multiple servers from same repo (Monorepo / Variants)
+### Monorepo / Variants — Decision: Variante 3 (Subdir optional at Register)
 
-`cdmx-in/authentik-mcp` example:
-- Register once with root URL → shows two detected sub-entries (`nodejs/authentik-mcp`, `nodejs/authentik-diag-mcp`)
-- OR: Register twice with explicit `subdir` field:
-  - `authentik-mcp` → subdir `nodejs/authentik-mcp`
-  - `authentik-diag-mcp` → subdir `nodejs/authentik-diag-mcp`
-- Both share the same clone directory root, build into separate subdir paths
-- One build → multiple Install variants possible (different Args per Install)
+Each Custom Marketplace entry **is itself a specific subdir entry**. The detail page is always the same layout — there is no special "monorepo page".
 
-**Recommendation**: One build directory per `(repoUrl, subdir)` combination. If User registers same URL twice with different subdirs, two separate build dirs exist. On "Remove build" or "Update repo", all build dirs derived from that repo URL are affected.
+**Register flow for monorepo:**
+```
+AddCustomRepoModal:
+  URL:    https://github.com/cdmx-in/authentik-mcp
+  Subdir: nodejs/authentik-mcp       ← optional field, auto-suggested on detect
+  Name:   authentik-mcp              ← auto-derived, editable
+  → POST /api/market/custom-servers  → one marketplace entry
+
+Register again for the second variant:
+  URL:    https://github.com/cdmx-in/authentik-mcp
+  Subdir: nodejs/authentik-diag-mcp
+  Name:   authentik-diag-mcp
+  → POST /api/market/custom-servers  → second independent marketplace entry
+```
+
+When Register detects a monorepo (no package.json at root, multiple subdirs found), the modal shows a hint:
+```
+"Monorepo detected: 2 possible entries found.
+ → authentik-mcp      (nodejs/authentik-mcp)      [Add this]
+ → authentik-diag-mcp (nodejs/authentik-diag-mcp) [Add this]
+ Or enter a subdir manually below."
+```
+
+**Build directory per entry:** `/var/lib/mcphub/build-runs/<serverName>-<runId>/`  
+Clone always fetches the full repo root. Build steps (`npm install`, `npm run build`) run in `<installDir>/<subdir>` when subdir is set.  
+Install `cwd` points to `<installDir>/<subdir>`.
+
+**CRUD:**
+- Each entry is fully independent — update/delete one entry does not affect the other.
+- "Remove build" deletes the build directory for that entry only.
+- If User deletes a custom server entry, associated build runs are also removed (cascade).
+
+---
+
+### Custom Server Detail Page Layout
+
+The detail page is **identical for all custom repos** — with and without subdir.  
+Subdir is simply displayed as a badge in the header. Build runs and Install button always belong to this specific entry.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ ← Back to list                                               │
+│                                                              │
+│  Authentik MCP                        [Custom]               │
+│  (authentik-mcp)                                             │
+│  Author: cdmx-in  ·  📁 nodejs/authentik-mcp  ← subdir badge│
+│  github.com/cdmx-in/authentik-mcp                            │
+│                                                              │
+│                           [Install]  ← active only when      │
+│                                        a succeeded build exists│
+├──────────────────────────────────────────────────────────────┤
+│  VARIANTS                                                     │
+│                                                              │
+│  Other entries registered from the same repository URL:       │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  authentik-diag-mcp  ·  nodejs/authentik-diag-mcp    │   │
+│  │  ⚪ No builds yet                    [View →]         │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                              │
+│  (If no other entries from same URL: "No other variants       │
+│   registered from this repository.")                          │
+├──────────────────────────────────────────────────────────────┤
+│  README  (loads from <subdir>/README.md, fallback: root)      │
+│  [View on GitHub →]                                           │
+│  (README content)                                             │
+├──────────────────────────────────────────────────────────────┤
+│  BUILD RUNS             ✅ Last: succeeded 4h ago  [+ Build] │
+│                                                              │
+│  ✅ #3  succeeded  2026-08-12 04:51  2m14s  [Install] [▼]   │
+│  ❌ #2  build_error 2026-08-11 22:47  0m43s  [Retry]  [▼]   │
+│  ❌ #1  clone_error 2026-08-11 21:12  1m02s  [Retry]  [▼]   │
+│                                                              │
+│  ▼ (expanded log for selected run)                           │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │ Cloning repository...                                 │   │
+│  │ > npm install                                         │   │
+│  │ > npm run build                                       │   │
+│  │ ✅ Build succeeded                                    │   │
+│  └──────────────────────────────────────────────────────┘   │
+├──────────────────────────────────────────────────────────────┤
+│                    [Edit Custom Repo]  [Delete Custom Repo]   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Key rules:**
+- **Variants section** always shown. If no other entries from same URL exist: "No other variants registered from this repository."
+- **[Install] in header** = disabled until at least one `succeeded` build run exists. Tooltip: "Build first to enable install." Opens prefilled ServerForm for the most recent succeeded build.
+- **[Install] on build run row** = opens prefilled ServerForm for that specific build.
+- **[▼] on build run row** = inline log expansion (accordion only for the log, not the whole section).
+- **[+ Build] button** = opens Detect flow as modal/slide-over (replaces current embedded wizard).
+- **README** loads from `<subdir>/README.md` first, then root `README.md` as fallback.
+- **Subdir badge** only shown when `subdir` is set; hidden for non-monorepo entries.
+
+---
+
+### Variants Section — data source
+
+The Variants section queries all custom entries that share the same `repository.url` as the current entry, excluding itself:
+
+```typescript
+// In frontend: after loading the current custom server
+const variants = allCustomServers.filter(
+  s => s.repository?.url === currentServer.repository?.url && s.name !== currentServer.name
+);
+```
+
+No new API endpoint needed — already loaded as part of market server list.
 
 ---
 
