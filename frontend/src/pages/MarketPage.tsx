@@ -107,6 +107,7 @@ const MarketPage: React.FC = () => {
   const [deployBuildRepo, setDeployBuildRepo] = useState('');
   const [deployBuildName, setDeployBuildName] = useState('');
   const [deployBuildVersion, setDeployBuildVersion] = useState('');
+  const [deployBuildSubdir, setDeployBuildSubdir] = useState('');
   const [deployBuildTargetDir, setDeployBuildTargetDir] = useState('');
   const [deployBuildTargetDirTouched, setDeployBuildTargetDirTouched] = useState(false);
   const [deployBuildPreview, setDeployBuildPreview] = useState<any>(null);
@@ -306,9 +307,14 @@ const MarketPage: React.FC = () => {
 
     const resolvedInstallDir = resolvedTargetDir.replace(/[\\/]+$/, '');
     const resolvedInstallRoot = parentDir(resolvedInstallDir);
+    const normalizedPlanSubdir = typeof plan?.subdir === 'string'
+      ? plan.subdir.trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '')
+      : (typeof deployBuildSubdir === 'string' ? deployBuildSubdir.trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '') : '');
+    const resolvedWorkDir = normalizedPlanSubdir ? `${resolvedInstallDir}/${normalizedPlanSubdir}` : resolvedInstallDir;
 
     return {
       ...plan,
+      subdir: normalizedPlanSubdir || undefined,
       installRoot: resolvedInstallRoot,
       installDir: resolvedInstallDir,
       steps: Array.isArray(plan.steps)
@@ -321,8 +327,9 @@ const MarketPage: React.FC = () => {
               nextStep.args[nextStep.args.length - 1] = resolvedInstallDir;
               nextStep.cwd = resolvedInstallRoot;
             } else if (typeof nextStep.cwd === 'string') {
-              if (nextStep.cwd === plan.installRoot || nextStep.cwd === plan.installDir) {
-                nextStep.cwd = resolvedInstallDir;
+              const normalizedCwd = nextStep.cwd.replace(/[\\/]+$/, '');
+              if (normalizedCwd === plan.installRoot || normalizedCwd === plan.installDir || normalizedCwd === (plan.subdir ? `${plan.installDir}/${plan.subdir}` : plan.installDir)) {
+                nextStep.cwd = normalizedPlanSubdir ? resolvedWorkDir : resolvedInstallDir;
               }
             }
 
@@ -332,7 +339,7 @@ const MarketPage: React.FC = () => {
     };
   };
 
-  const openDeployBuildModal = (repo = '', name = '', version = '') => {
+  const openDeployBuildModal = (repo = '', name = '', version = '', subdir = '') => {
     const derivedDefaults = deriveDeployBuildDefaults(repo);
     const resolvedName = name || derivedDefaults.serverName;
     const resolvedVersion = version || derivedDefaults.version;
@@ -340,6 +347,7 @@ const MarketPage: React.FC = () => {
     setDeployBuildRepo(repo);
     setDeployBuildName(resolvedName);
     setDeployBuildVersion(resolvedVersion);
+    setDeployBuildSubdir(subdir);
     setDeployBuildTargetDir(deriveDeployBuildTargetDir(resolvedName || derivedDefaults.serverName));
     setDeployBuildTargetDirTouched(false);
     setDeployBuildPreview(null);
@@ -520,6 +528,7 @@ const MarketPage: React.FC = () => {
     setDeployBuildRepo('');
     setDeployBuildName('');
     setDeployBuildVersion('');
+    setDeployBuildSubdir('');
     setDeployBuildTargetDir('');
     setDeployBuildTargetDirTouched(false);
     setDeployBuildPreview(null);
@@ -562,6 +571,7 @@ const MarketPage: React.FC = () => {
         repositoryUrl: deployBuildRepo.trim(),
         serverName: deployBuildName.trim() || undefined,
         version: deployBuildVersion.trim() || undefined,
+        subdir: deployBuildSubdir.trim() || undefined,
         plan: planDraft ?? undefined,
       });
 
@@ -599,6 +609,7 @@ const MarketPage: React.FC = () => {
         repositoryUrl: deployBuildRepo.trim(),
         serverName: deployBuildName.trim() || undefined,
         version: deployBuildVersion.trim() || undefined,
+        subdir: deployBuildSubdir.trim() || undefined,
         plan: planForDeploy,
       });
 
@@ -671,6 +682,7 @@ const MarketPage: React.FC = () => {
       repositoryUrl={deployBuildRepo}
       serverName={deployBuildName}
       version={deployBuildVersion}
+      subdir={deployBuildSubdir}
       targetDir={deployBuildTargetDir}
       preview={deployBuildPreview}
       planDraftJson={deployBuildPlanDraftJson}
@@ -685,6 +697,7 @@ const MarketPage: React.FC = () => {
       onRepositoryChange={handleDeployBuildRepoChange}
       onServerNameChange={handleDeployBuildNameChange}
       onVersionChange={setDeployBuildVersion}
+      onSubdirChange={setDeployBuildSubdir}
       onTargetDirChange={handleDeployBuildTargetDirChange}
       onPlanDraftJsonChange={setDeployBuildPlanDraftJson}
       onSubmit={handleDeployBuildSubmit}
@@ -803,8 +816,9 @@ const MarketPage: React.FC = () => {
       selectedServer.repository?.url || '',
       selectedServer.name || '',
       selectedServer.version || '',
+      selectedServer.repository?.subdir || '',
     );
-  }, [showInlineDeploy, selectedServer?.name, selectedServer?.repository?.url, selectedServer?.version]);
+  }, [showInlineDeploy, selectedServer?.name, selectedServer?.repository?.url, selectedServer?.repository?.subdir, selectedServer?.version]);
 
   if (selectedServer) {
     return (
@@ -828,6 +842,7 @@ const MarketPage: React.FC = () => {
                 repositoryUrl={deployBuildRepo}
                 serverName={deployBuildName}
                 version={deployBuildVersion}
+                subdir={deployBuildSubdir}
                 targetDir={deployBuildTargetDir}
                 preview={deployBuildPreview}
                 planDraftJson={deployBuildPlanDraftJson}

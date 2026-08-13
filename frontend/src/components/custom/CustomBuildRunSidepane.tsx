@@ -8,10 +8,11 @@ type WizardJob = BuildRun;
 type WizardPlan = {
   repositoryUrl: string;
   serverName: string;
+  subdir?: string;
   version?: string;
   engine: string;
   prerequisites?: string[];
-  steps?: Array<{ id: string; title: string; command?: string; args?: string[] }>;
+  steps?: Array<{ id: string; title: string; command?: string; args?: string[]; cwd?: string }>;
   selectedPort?: number;
   installDir?: string;
 };
@@ -22,6 +23,7 @@ interface CustomBuildRunSidepaneProps {
   repositoryUrl: string;
   serverName: string;
   version: string;
+  subdir?: string;
   targetDir: string;
   preview: WizardPlan | null;
   planDraftJson: string;
@@ -36,6 +38,7 @@ interface CustomBuildRunSidepaneProps {
   onRepositoryChange: (value: string) => void;
   onServerNameChange: (value: string) => void;
   onVersionChange: (value: string) => void;
+  onSubdirChange?: (value: string) => void;
   onTargetDirChange: (value: string) => void;
   onPlanDraftJsonChange: (value: string) => void;
   onSubmit: (e: React.FormEvent) => void;
@@ -53,6 +56,7 @@ const CustomBuildRunSidepane: React.FC<CustomBuildRunSidepaneProps> = ({
   repositoryUrl,
   serverName,
   version,
+  subdir = '',
   targetDir,
   preview,
   planDraftJson,
@@ -67,6 +71,7 @@ const CustomBuildRunSidepane: React.FC<CustomBuildRunSidepaneProps> = ({
   onRepositoryChange,
   onServerNameChange,
   onVersionChange,
+  onSubdirChange,
   onTargetDirChange,
   onPlanDraftJsonChange,
   onSubmit,
@@ -162,6 +167,17 @@ const CustomBuildRunSidepane: React.FC<CustomBuildRunSidepaneProps> = ({
                   onChange={(e) => onServerNameChange(e.target.value)}
                   placeholder="authentik-mcp"
                 />
+              </label>
+
+              <label className="block">
+                <span className="text-sm font-medium text-[var(--hub-ink-2)]">Repository subdir</span>
+                <input
+                  className="hub-input mt-1 w-full"
+                  value={subdir}
+                  onChange={(e) => onSubdirChange?.(e.target.value)}
+                  placeholder="packages/server" 
+                />
+                <p className="mt-1 text-[11px] text-[var(--hub-ink-3)]">Leave empty for repo root. Useful for monorepos and multi-server repos.</p>
               </label>
             </section>
 

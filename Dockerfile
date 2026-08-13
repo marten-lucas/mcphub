@@ -52,11 +52,7 @@ COPY . .
 # Download the latest servers.json from mcpm.sh and replace the existing file
 RUN curl -s -f --connect-timeout 10 https://mcpm.sh/api/servers.json -o servers.json || echo "Failed to download servers.json, using bundled version"
 
-RUN if [ -d dist ] && [ -d frontend/dist ]; then \
-  echo "Using prebuilt dist artifacts"; \
-else \
-  pnpm build; \
-fi
+RUN rm -rf dist frontend/dist && pnpm build
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

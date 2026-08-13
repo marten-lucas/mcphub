@@ -36,15 +36,15 @@ export const previewDeployBuildHandler = async (req: Request, res: Response): Pr
 
   const username = getUsername(req);
   try {
-    const { repositoryUrl, serverName, version, plan: planInput } = req.body ?? {};
+    const { repositoryUrl, serverName, version, subdir, plan: planInput } = req.body ?? {};
     if (typeof repositoryUrl !== 'string' || !repositoryUrl.trim()) {
       res.status(400).json({ success: false, message: 'repositoryUrl is required' });
       auditLog('preview-deploy-build', username, { repositoryUrl, serverName, error: 'invalid_repo' }, false);
       return;
     }
 
-    const plan = await previewDeployBuild({ repositoryUrl, serverName, version, plan: planInput });
-    auditLog('preview-deploy-build', username, { repositoryUrl, serverName, version, engine: plan.engine }, true);
+    const plan = await previewDeployBuild({ repositoryUrl, serverName, version, subdir, plan: planInput });
+    auditLog('preview-deploy-build', username, { repositoryUrl, serverName, version, subdir, engine: plan.engine }, true);
     res.json({ success: true, data: plan });
   } catch (error) {
     auditLog('preview-deploy-build', username, { error: error instanceof Error ? error.message : 'unknown' }, false);
@@ -60,21 +60,21 @@ export const createDeployBuildHandler = async (req: Request, res: Response): Pro
 
   const username = getUsername(req);
   try {
-    const { repositoryUrl, serverName, version, plan: planInput } = req.body ?? {};
+    const { repositoryUrl, serverName, version, subdir, plan: planInput } = req.body ?? {};
     if (typeof repositoryUrl !== 'string' || !repositoryUrl.trim()) {
       res.status(400).json({ success: false, message: 'repositoryUrl is required' });
       auditLog('create-deploy-build', username, { repositoryUrl, serverName, error: 'invalid_repo' }, false);
       return;
     }
 
-    const job = await createDeployBuildJob({ repositoryUrl, serverName, version, plan: planInput });
+    const job = await createDeployBuildJob({ repositoryUrl, serverName, version, subdir, plan: planInput });
     void executeDeployBuildJob(job.id).catch((error) => {
       console.error('Failed to execute deploy build job', {
         jobId: job.id,
         error: error instanceof Error ? error.message : String(error),
       });
     });
-    auditLog('create-deploy-build', username, { repositoryUrl, serverName, version, jobId: job.id }, true);
+    auditLog('create-deploy-build', username, { repositoryUrl, serverName, version, subdir, jobId: job.id }, true);
     res.status(202).json({ success: true, data: job });
   } catch (error) {
     auditLog('create-deploy-build', username, { error: error instanceof Error ? error.message : 'unknown' }, false);

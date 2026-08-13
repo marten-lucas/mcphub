@@ -34,6 +34,7 @@ export interface DeployBuildPlan {
   id: string;
   repositoryUrl: string;
   serverName: string;
+  subdir?: string;
   version?: string;
   installRoot: string;
   installDir: string;
@@ -67,12 +68,14 @@ interface PreviewInstallInput {
   repositoryUrl: string;
   serverName?: string;
   version?: string;
+  subdir?: string;
 }
 
 interface DeployBuildPlanInput {
   id?: string;
   repositoryUrl?: string;
   serverName?: string;
+  subdir?: string;
   version?: string;
   installRoot?: string;
   installDir?: string;
@@ -205,6 +208,15 @@ const normalizeRepositoryUrl = (value: string): string => {
     }
     return trimmed.replace(/\.git$/i, '').replace(/\/+$/, '').toLowerCase();
   }
+};
+
+const normalizeSubdir = (value?: string): string | undefined => {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const normalized = value.trim().replace(/\\/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
+  return normalized || undefined;
 };
 
 const filterDeployBuildJobs = (
@@ -415,7 +427,7 @@ const runCommand = async (
 };
 
 
-const analyzeRepository = async (repositoryUrl: string, _serverName: string): Promise<{
+const analyzeRepository = async (repositoryUrl: string, _serverName: string, subdir?: string): Promise<{
   engine: 'node' | 'python' | 'docker' | 'unknown';
   prerequisites: string[];
   defaultBranch: string;
@@ -428,6 +440,7 @@ const analyzeRepository = async (repositoryUrl: string, _serverName: string): Pr
     const urlParts = repositoryUrl.replace(/\.git$/, '').split('/');
     const owner = urlParts[urlParts.length - 2];
     const repo = urlParts[urlParts.length - 1];
+    const normalizedSubdir = normalizeSubdir(subdir);
 
     const apiUrl = `https://api.github.com/repos/${owner}/${repo}`;
     const repoInfo = await axios.get(`${apiUrl}`, { timeout: 10000 });
@@ -436,6 +449,28 @@ const analyzeRepository = async (repositoryUrl: string, _serverName: string): Pr
     const treeUrl = `https://api.github.com/repos/${owner}/${repo}/contents/?ref=${defaultBranch}`;
     const contentsRes = await axios.get(treeUrl, { timeout: 10000 });
     const fileNames = (contentsRes.data as any[]).map((item) => item.name);
+
+    if (normalizedSubdir) {
+      const subdirPath = normalizedSubdir.replace(/^\/+/, '');
+      try {
+        const subdirUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${subdirPath}?ref=${defaultBranch}`;
+        const subdirRes = await axios.get(subdirUrl, { timeout: 10000 });
+        const subEntries = Array.isArray(subdirRes.data) ? subdirRes.data : [subdirRes.data];
+        const subFileNames = subEntries.map((item: any) => item.name);
+
+        if (subFileNames.includes('package.json')) {
+          return { engine: 'node', prerequisites: ['node', 'npm', 'git'], defaultBranch, owner, repo, fileNames, monorepoSubdirCandidates: [normalizedSubdir] };
+        }
+        if (subFileNames.includes('pyproject.toml') || subFileNames.includes('setup.py') || subFileNames.includes('requirements.txt')) {
+          return { engine: 'python', prerequisites: ['python3', 'pip', 'git'], defaultBranch, owner, repo, fileNames, monorepoSubdirCandidates: [normalizedSubdir] };
+        }
+        if (subFileNames.includes('Dockerfile') || subFileNames.includes('docker-compose.yml')) {
+          return { engine: 'docker', prerequisites: ['docker', 'docker-compose', 'git'], defaultBranch, owner, repo, fileNames, monorepoSubdirCandidates: [normalizedSubdir] };
+        }
+      } catch {
+        // Fall back to repo-root detection below.
+      }
+    }
 
     if (fileNames.includes('package.json')) {
       return { engine: 'node', prerequisites: ['node', 'npm', 'git'], defaultBranch, owner, repo, fileNames };
@@ -476,11 +511,13 @@ const generatePlan = async (input: DeployBuildRequest): Promise<DeployBuildPlan>
     throw new Error('Repository URL is required');
   }
 
+  const normalizedSubdir = normalizeSubdir(input.subdir ?? input.plan?.subdir);
   const serverName = inputServerName || 'source-server-' + randomUUID().slice(0, 8);
   const planId = input.plan?.id ?? `plan-${randomUUID()}`;
   const installDir =
     input.plan?.installDir ?? path.join(INSTALL_ROOT, `${serverName}-${planId.slice(-8)}`);
-  const { engine, prerequisites, defaultBranch, owner, repo, fileNames, monorepoSubdirCandidates } = await analyzeRepository(repositoryUrl, serverName);
+  const workDir = normalizedSubdir ? path.join(installDir, normalizedSubdir) : installDir;
+  const { engine, prerequisites, defaultBranch, owner, repo, fileNames, monorepoSubdirCandidates } = await analyzeRepository(repositoryUrl, serverName, normalizedSubdir);
 
   const baseSteps: DeployBuildStep[] = [
     {
@@ -493,19 +530,21 @@ const generatePlan = async (input: DeployBuildRequest): Promise<DeployBuildPlan>
   ];
 
   if (engine === 'node') {
+    const installStepCwd = workDir;
     baseSteps.push({
       id: 'install',
       title: 'Install npm dependencies',
       command: 'npm',
       args: ['install', '--include=dev'],
-      cwd: installDir,
+      cwd: installStepCwd,
     });
 
     // Check if package.json has a build script
     let hasBuildScript = false;
-    if (owner && repo && fileNames.includes('package.json')) {
+    const pkgManifestPath = normalizedSubdir ? `${normalizedSubdir}/package.json` : 'package.json';
+    if (owner && repo && (fileNames.includes('package.json') || Boolean(normalizedSubdir))) {
       try {
-        const pkgJsonUrl = `https://api.github.com/repos/${owner}/${repo}/contents/package.json?ref=${defaultBranch}`;
+        const pkgJsonUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${pkgManifestPath}?ref=${defaultBranch}`;
         const pkgJsonRes = await axios.get(pkgJsonUrl, { timeout: 10000 });
         const content = Buffer.from(pkgJsonRes.data.content, 'base64').toString('utf8');
         const pkgJson = JSON.parse(content);
@@ -521,12 +560,13 @@ const generatePlan = async (input: DeployBuildRequest): Promise<DeployBuildPlan>
         title: 'Build project',
         command: 'npm',
         args: ['run', 'build'],
-        cwd: installDir,
+        cwd: installStepCwd,
       });
     }
   } else if (engine === 'python') {
-    const hasUvLock = fileNames.includes('uv.lock');
-    const hasRequirements = fileNames.includes('requirements.txt');
+    const installStepCwd = workDir;
+    const hasUvLock = fileNames.includes('uv.lock') || Boolean(normalizedSubdir && fileNames.includes('uv.lock'));
+    const hasRequirements = fileNames.includes('requirements.txt') || Boolean(normalizedSubdir && fileNames.includes('requirements.txt'));
 
     if (hasUvLock) {
       baseSteps.push({
@@ -534,7 +574,7 @@ const generatePlan = async (input: DeployBuildRequest): Promise<DeployBuildPlan>
         title: 'Install dependencies with uv',
         command: 'uv',
         args: ['sync'],
-        cwd: installDir,
+        cwd: installStepCwd,
       });
     } else if (hasRequirements) {
       baseSteps.push({
@@ -542,7 +582,7 @@ const generatePlan = async (input: DeployBuildRequest): Promise<DeployBuildPlan>
         title: 'Install Python dependencies',
         command: 'pip',
         args: ['install', '-r', 'requirements.txt'],
-        cwd: installDir,
+        cwd: installStepCwd,
       });
     } else {
       baseSteps.push({
@@ -550,7 +590,7 @@ const generatePlan = async (input: DeployBuildRequest): Promise<DeployBuildPlan>
         title: 'Install Python package',
         command: 'pip',
         args: ['install', '-e', '.'],
-        cwd: installDir,
+        cwd: installStepCwd,
       });
     }
   } else if (engine === 'docker') {
@@ -559,7 +599,7 @@ const generatePlan = async (input: DeployBuildRequest): Promise<DeployBuildPlan>
       title: 'Build Docker image',
       command: 'docker',
       args: ['compose', 'build'],
-      cwd: installDir,
+      cwd: workDir,
     });
   } else {
     baseSteps.push({
@@ -567,7 +607,7 @@ const generatePlan = async (input: DeployBuildRequest): Promise<DeployBuildPlan>
       title: 'Review repository structure',
       command: 'ls',
       args: ['-la'],
-      cwd: installDir,
+      cwd: workDir,
       optional: true,
     });
   }
@@ -578,6 +618,7 @@ const generatePlan = async (input: DeployBuildRequest): Promise<DeployBuildPlan>
     id: planId,
     repositoryUrl: input.plan?.repositoryUrl ?? input.repositoryUrl,
     serverName: input.plan?.serverName ?? serverName,
+    subdir: normalizeSubdir(input.plan?.subdir ?? input.subdir ?? normalizedSubdir),
     version: input.plan?.version ?? input.version,
     installRoot: input.plan?.installRoot ?? INSTALL_ROOT,
     installDir: input.plan?.installDir ?? installDir,
@@ -743,6 +784,7 @@ export const createDeployBuildJob = async (input: DeployBuildRequest): Promise<D
     id: `job-${randomUUID()}`,
     repositoryUrl: plan.repositoryUrl,
     serverName: plan.serverName,
+    subdir: normalizeSubdir(plan.subdir ?? input.subdir),
     version: plan.version,
     status: 'queued',
     createdAt: new Date().toISOString(),

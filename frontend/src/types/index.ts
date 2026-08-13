@@ -847,6 +847,7 @@ export interface BuildRunPlan {
   id: string;
   repositoryUrl: string;
   serverName: string;
+  subdir?: string;
   version?: string;
   installRoot: string;
   installDir: string;
