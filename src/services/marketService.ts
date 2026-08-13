@@ -191,28 +191,26 @@ const deriveServerNameFromSubdir = (subdir: string): string => {
     .toLowerCase();
 };
 
-// Register a custom server from repository URL
-export const registerCustomServer = (
+const normalizeRepositoryUrl = (repositoryUrl: string): string => repositoryUrl
+  .trim()
+  .replace(/^git@/, '')
+  .replace(/^ssh:\/\//, 'https://')
+  .replace(/\.git$/i, '')
+  .replace(/\/+$/, '')
+  .toLowerCase();
+
+const buildCustomServer = (
   serverName: string,
   repositoryUrl: string,
   tags: string[] = [],
   version?: string,
   subdir?: string,
 ): MarketServer => {
-  const customServers = getCustomServers();
   const normalizedServerName = serverName.trim();
-  if (!normalizedServerName) {
-    throw new Error('Custom server name is required');
-  }
-  if (customServers[normalizedServerName]) {
-    throw new Error(`Custom server "${normalizedServerName}" already exists`);
-  }
-
   const resolvedTags = ensureCustomTag(tags.length > 0 ? tags : deriveTagsFromRepositoryUrl(repositoryUrl));
   const resolvedVersion = typeof version === 'string' && version.trim() ? version.trim() : 'latest';
 
-  // Create a new market server entry for custom repo
-  const newServer: MarketServer = {
+  return {
     name: normalizedServerName,
     display_name: normalizedServerName.charAt(0).toUpperCase() + normalizedServerName.slice(1).replace(/-/g, ' '),
     description: `Custom MCP server from ${repositoryUrl}`,
@@ -233,12 +231,47 @@ export const registerCustomServer = (
     tools: [],
     version: resolvedVersion,
   };
+};
 
-  customServers[normalizedServerName] = newServer;
-
-  // Write back to file
+const persistCustomServers = (customServers: Record<string, MarketServer>): void => {
   const customPath = getCustomServersPath();
   fs.writeFileSync(customPath, JSON.stringify(customServers, null, 2), 'utf8');
+};
+
+const matchesRegisteredVariant = (
+  server: MarketServer,
+  repositoryUrl: string,
+  subdir?: string,
+): boolean => {
+  const existingRepoUrl = server.repository?.url ? normalizeRepositoryUrl(server.repository.url) : '';
+  const nextRepoUrl = normalizeRepositoryUrl(repositoryUrl);
+  const existingSubdir = normalizeSubdir(server.repository?.subdir);
+  const nextSubdir = normalizeSubdir(subdir);
+
+  return existingRepoUrl === nextRepoUrl && existingSubdir === nextSubdir;
+};
+
+// Register a custom server from repository URL
+export const registerCustomServer = (
+  serverName: string,
+  repositoryUrl: string,
+  tags: string[] = [],
+  version?: string,
+  subdir?: string,
+): MarketServer => {
+  const customServers = getCustomServers();
+  const normalizedServerName = serverName.trim();
+  if (!normalizedServerName) {
+    throw new Error('Custom server name is required');
+  }
+  if (customServers[normalizedServerName]) {
+    throw new Error(`Custom server "${normalizedServerName}" already exists`);
+  }
+
+  const newServer = buildCustomServer(normalizedServerName, repositoryUrl, tags, version, subdir);
+
+  customServers[normalizedServerName] = newServer;
+  persistCustomServers(customServers);
 
   return newServer;
 };
@@ -253,6 +286,7 @@ export const registerCustomServersFromRepository = async (
   createdServers: MarketServer[];
   primaryServerName: string;
   autoDetectedVariants: boolean;
+  newlyCreatedCount: number;
 }> => {
   const normalizedSubdir = normalizeSubdir(subdir);
   if (normalizedSubdir) {
@@ -261,6 +295,7 @@ export const registerCustomServersFromRepository = async (
       createdServers: [createdServer],
       primaryServerName: createdServer.name,
       autoDetectedVariants: false,
+      newlyCreatedCount: 1,
     };
   }
 
@@ -276,13 +311,39 @@ export const registerCustomServersFromRepository = async (
     : [];
 
   if (monorepoCandidates.length > 1) {
-    const createdServers = monorepoCandidates.map((candidate) =>
-      registerCustomServer(deriveServerNameFromSubdir(candidate), repositoryUrl, tags, version, candidate),
-    );
+    const customServers = getCustomServers();
+    const resolvedServers: MarketServer[] = [];
+    let hasChanges = false;
+    let newlyCreatedCount = 0;
+
+    for (const candidate of monorepoCandidates) {
+      const candidateServerName = deriveServerNameFromSubdir(candidate);
+      const existingServer = customServers[candidateServerName];
+
+      if (existingServer) {
+        if (!matchesRegisteredVariant(existingServer, repositoryUrl, candidate)) {
+          throw new Error(`Custom server "${candidateServerName}" already exists`);
+        }
+        resolvedServers.push(existingServer);
+        continue;
+      }
+
+      const nextServer = buildCustomServer(candidateServerName, repositoryUrl, tags, version, candidate);
+      customServers[candidateServerName] = nextServer;
+      resolvedServers.push(nextServer);
+      hasChanges = true;
+      newlyCreatedCount += 1;
+    }
+
+    if (hasChanges) {
+      persistCustomServers(customServers);
+    }
+
     return {
-      createdServers,
-      primaryServerName: createdServers[0].name,
+      createdServers: resolvedServers,
+      primaryServerName: resolvedServers[0].name,
       autoDetectedVariants: true,
+      newlyCreatedCount,
     };
   }
 
@@ -291,6 +352,7 @@ export const registerCustomServersFromRepository = async (
     createdServers: [createdServer],
     primaryServerName: createdServer.name,
     autoDetectedVariants: false,
+    newlyCreatedCount: 1,
   };
 };
 

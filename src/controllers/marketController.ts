@@ -202,7 +202,9 @@ export const registerCustomMarketServer = async (req: Request, res: Response): P
       success: true,
       data: registrationResult,
       message: registrationResult.autoDetectedVariants
-        ? `Registered ${registrationResult.createdServers.length} custom server variants successfully`
+        ? registrationResult.newlyCreatedCount > 0
+          ? `Registered ${registrationResult.newlyCreatedCount} custom server variants successfully`
+          : `Custom server variants already registered`
         : 'Custom server registered successfully',
     };
     res.status(201).json(response);

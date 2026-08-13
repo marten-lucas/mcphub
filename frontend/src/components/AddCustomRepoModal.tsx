@@ -23,6 +23,7 @@ interface CustomServerRegistrationResult {
   createdServers?: Array<{ name: string }>;
   primaryServerName?: string;
   autoDetectedVariants?: boolean;
+  newlyCreatedCount?: number;
 }
 
 const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
@@ -176,10 +177,15 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
             : [];
           const primaryServerName = registrationResult?.primaryServerName?.trim() || serverName.trim();
           const createdCount = createdServers.length;
+          const newlyCreatedCount = typeof registrationResult?.newlyCreatedCount === 'number'
+            ? registrationResult.newlyCreatedCount
+            : createdCount;
 
           showToast(
             registrationResult?.autoDetectedVariants && createdCount > 1
-              ? `Registered ${createdCount} custom server variants from "${repositoryUrl}".`
+              ? newlyCreatedCount > 0
+                ? `Registered ${newlyCreatedCount} new custom server variants from "${repositoryUrl}".`
+                : `All ${createdCount} custom server variants from "${repositoryUrl}" are already registered.`
               : `Custom server "${primaryServerName}" registered successfully`,
             'success',
           );
