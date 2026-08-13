@@ -230,7 +230,7 @@ describe('MCP Service - passthrough headers for upstream MCP transports', () => 
     );
   });
 
-  it('should use the current process working directory for stdio transports', async () => {
+  it('should prefer the configured working directory for stdio transports', async () => {
     (StdioClientTransport as jest.Mock).mockImplementation(() => ({
       stderr: {
         on: jest.fn(),
@@ -240,6 +240,7 @@ describe('MCP Service - passthrough headers for upstream MCP transports', () => 
     await createTransportFromConfig('demo-stdio', {
       command: 'npx',
       args: ['@playwright/mcp'],
+      cwd: '/tmp/demo-stdio',
       env: {
         DEMO_VAR: 'demo',
       },
@@ -247,13 +248,34 @@ describe('MCP Service - passthrough headers for upstream MCP transports', () => 
 
     expect(StdioClientTransport).toHaveBeenCalledWith(
       expect.objectContaining({
-        cwd: process.cwd(),
+        cwd: '/tmp/demo-stdio',
         command: 'npx',
         args: ['@playwright/mcp'],
         env: expect.objectContaining({
           DEMO_VAR: 'demo',
         }),
         stderr: 'pipe',
+      }),
+    );
+  });
+
+  it('should fall back to the current process working directory for stdio transports without cwd', async () => {
+    (StdioClientTransport as jest.Mock).mockImplementation(() => ({
+      stderr: {
+        on: jest.fn(),
+      },
+    }));
+
+    await createTransportFromConfig('demo-stdio-fallback', {
+      command: 'npx',
+      args: ['@playwright/mcp'],
+    });
+
+    expect(StdioClientTransport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: process.cwd(),
+        command: 'npx',
+        args: ['@playwright/mcp'],
       }),
     );
   });
