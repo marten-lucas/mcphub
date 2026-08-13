@@ -190,6 +190,32 @@ describe('previewDeployBuild — plan generation', () => {
     expect(plan.version).toBe('latest');
     expect(plan.steps.find((step) => step.id === 'clone')).toBeDefined();
   });
+
+  it('detects nested monorepo subdir candidates when the root has no package manifest', async () => {
+    mockGitHubRepo();
+    mockGitHubContents(['nodejs', 'README.md']);
+    mockedAxios.get.mockResolvedValueOnce({
+      data: {
+        tree: [
+          { path: 'README.md', type: 'blob' },
+          { path: 'nodejs/authentik-mcp/package.json', type: 'blob' },
+          { path: 'nodejs/authentik-diag-mcp/package.json', type: 'blob' },
+          { path: 'nodejs/authentik-diag-mcp/src/index.ts', type: 'blob' },
+        ],
+      },
+    });
+
+    const plan = await previewDeployBuild({
+      repositoryUrl: 'https://github.com/cdmx-in/authentik-mcp',
+      serverName: 'authentik-mcp',
+    });
+
+    expect(plan.engine).toBe('unknown');
+    expect(plan.monorepoSubdirCandidates).toEqual([
+      'nodejs/authentik-diag-mcp',
+      'nodejs/authentik-mcp',
+    ]);
+  });
 });
 
 describe('isFinalBuildStatus', () => {

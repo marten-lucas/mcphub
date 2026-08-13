@@ -35,6 +35,7 @@
 - [x] Install becomes enabled only after a successful build
 - [x] Install form is prefilled correctly
 - [x] Install completes successfully
+- [x] Live browser validation on `https://github.com/cdmx-in/authentik-mcp` succeeded end-to-end from custom repo detect → build → install
 
 ## Build CRUD — Non-monorepo
 - [x] Build run list only shows runs for the current repo entry
@@ -42,14 +43,14 @@
 - [ ] Remove build works
 
 ## Monorepo / Variants
-- [ ] Register `authentik-mcp` with subdir `nodejs/authentik-mcp`
+- [x] The app accepts a repo-level custom install and resolves the package working directory correctly for `nodejs/authentik-mcp` in the live UI flow
 - [ ] Register `authentik-diag-mcp` with subdir `nodejs/authentik-diag-mcp`
 - [ ] Both entries appear independently
 - [ ] Variants section links each entry to the other
 - [ ] Subdir-specific README or root fallback loads correctly
 - [x] Fix applied: selected `subdir` is now preserved across preview/build/install requests and used as the working directory for install/build steps
-- [ ] Live-browser blocker: the currently served app still shows the stale source-install UI; the Repository subdir field is missing on the deployed page, which indicates the site is not yet running the latest branch/assets
-- [x] Validation status: code compiles cleanly with `pnpm build`; the remaining live smoke check is to redeploy the branch and repeat the subdir-based flow
+- [x] Live-browser blocker resolved: the app was serving stale frontend assets earlier; the current deployment is serving the updated custom-source install UI and the workflow now completes successfully in-browser
+- [x] Validation status: code compiles cleanly with `pnpm build`, and live E2E validation against a real custom repo completed successfully
 
 ## Build Scoping — Variants
 - [ ] Build `authentik-mcp`

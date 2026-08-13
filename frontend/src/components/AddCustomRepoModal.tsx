@@ -19,6 +19,12 @@ interface AddCustomRepoModalProps {
   } | null;
 }
 
+interface CustomServerRegistrationResult {
+  createdServers?: Array<{ name: string }>;
+  primaryServerName?: string;
+  autoDetectedVariants?: boolean;
+}
+
 const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
   isOpen,
   onClose,
@@ -164,10 +170,22 @@ const AddCustomRepoModal: React.FC<AddCustomRepoModalProps> = ({
         });
 
         if (result.success) {
-          showToast(`Custom server "${serverName}" registered successfully`, 'success');
+          const registrationResult = (result.data ?? null) as CustomServerRegistrationResult | null;
+          const createdServers = Array.isArray(registrationResult?.createdServers)
+            ? registrationResult.createdServers
+            : [];
+          const primaryServerName = registrationResult?.primaryServerName?.trim() || serverName.trim();
+          const createdCount = createdServers.length;
+
+          showToast(
+            registrationResult?.autoDetectedVariants && createdCount > 1
+              ? `Registered ${createdCount} custom server variants from "${repositoryUrl}".`
+              : `Custom server "${primaryServerName}" registered successfully`,
+            'success',
+          );
           resetForm();
           onClose();
-          onSuccess?.(serverName.trim(), 'add');
+          onSuccess?.(primaryServerName, 'add');
         } else {
           setError(result.message || 'Failed to register custom server');
         }

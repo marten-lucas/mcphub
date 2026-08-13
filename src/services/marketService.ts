@@ -1,5 +1,6 @@
 import fs from 'fs';
 import { MarketServer } from '../types/index.js';
+import { previewDeployBuild } from './deployBuildService.js';
 import { getConfigFilePath } from '../utils/path.js';
 
 // Get path to the servers.json file
@@ -171,6 +172,25 @@ export const isSupportedRepositoryUrl = (repositoryUrl: string): boolean => {
   return /^(?:[^@\s]+@)?[^:\s]+:[^/\s]+\/[^/\s]+(?:\.git)?(?:\/)?$/i.test(trimmed);
 };
 
+const normalizeSubdir = (subdir?: string): string | undefined => {
+  if (typeof subdir !== 'string') {
+    return undefined;
+  }
+
+  const normalized = subdir.trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+  return normalized || undefined;
+};
+
+const deriveServerNameFromSubdir = (subdir: string): string => {
+  const lastSegment = subdir.split('/').filter(Boolean).pop() || subdir;
+  return lastSegment
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replace(/[_\s]+/g, '-')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase();
+};
+
 // Register a custom server from repository URL
 export const registerCustomServer = (
   serverName: string,
@@ -221,6 +241,57 @@ export const registerCustomServer = (
   fs.writeFileSync(customPath, JSON.stringify(customServers, null, 2), 'utf8');
 
   return newServer;
+};
+
+export const registerCustomServersFromRepository = async (
+  serverName: string,
+  repositoryUrl: string,
+  tags: string[] = [],
+  version?: string,
+  subdir?: string,
+): Promise<{
+  createdServers: MarketServer[];
+  primaryServerName: string;
+  autoDetectedVariants: boolean;
+}> => {
+  const normalizedSubdir = normalizeSubdir(subdir);
+  if (normalizedSubdir) {
+    const createdServer = registerCustomServer(serverName, repositoryUrl, tags, version, normalizedSubdir);
+    return {
+      createdServers: [createdServer],
+      primaryServerName: createdServer.name,
+      autoDetectedVariants: false,
+    };
+  }
+
+  const previewPlan = await previewDeployBuild({
+    repositoryUrl,
+    serverName,
+    version,
+  });
+  const monorepoCandidates = Array.isArray(previewPlan.monorepoSubdirCandidates)
+    ? previewPlan.monorepoSubdirCandidates
+      .map((candidate) => normalizeSubdir(candidate))
+      .filter((candidate): candidate is string => Boolean(candidate))
+    : [];
+
+  if (monorepoCandidates.length > 1) {
+    const createdServers = monorepoCandidates.map((candidate) =>
+      registerCustomServer(deriveServerNameFromSubdir(candidate), repositoryUrl, tags, version, candidate),
+    );
+    return {
+      createdServers,
+      primaryServerName: createdServers[0].name,
+      autoDetectedVariants: true,
+    };
+  }
+
+  const createdServer = registerCustomServer(serverName, repositoryUrl, tags, version);
+  return {
+    createdServers: [createdServer],
+    primaryServerName: createdServer.name,
+    autoDetectedVariants: false,
+  };
 };
 
 // Update a custom server (repository URL and/or display name)

@@ -219,6 +219,52 @@ const normalizeSubdir = (value?: string): string | undefined => {
   return normalized || undefined;
 };
 
+const MONOREPO_MANIFEST_FILES = new Set([
+  'package.json',
+  'pyproject.toml',
+  'setup.py',
+  'requirements.txt',
+]);
+
+const discoverMonorepoSubdirCandidates = async (
+  owner: string,
+  repo: string,
+  defaultBranch: string,
+): Promise<string[]> => {
+  const treeUrl = `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(defaultBranch)}?recursive=1`;
+  const treeRes = await axios.get(treeUrl, { timeout: 10000 });
+  const treeEntries = Array.isArray(treeRes.data?.tree) ? treeRes.data.tree : [];
+
+  const candidates = new Set<string>();
+  for (const entry of treeEntries) {
+    if (!entry || entry.type !== 'blob' || typeof entry.path !== 'string') {
+      continue;
+    }
+
+    const normalizedPath = entry.path.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+    if (!normalizedPath) {
+      continue;
+    }
+
+    const pathSegments = normalizedPath.split('/');
+    if (pathSegments.length < 2) {
+      continue;
+    }
+
+    const manifestName = pathSegments[pathSegments.length - 1];
+    if (!MONOREPO_MANIFEST_FILES.has(manifestName)) {
+      continue;
+    }
+
+    const candidateDir = pathSegments.slice(0, -1).join('/');
+    if (candidateDir) {
+      candidates.add(candidateDir);
+    }
+  }
+
+  return Array.from(candidates).sort((left, right) => left.localeCompare(right));
+};
+
 const filterDeployBuildJobs = (
   jobs: DeployBuildJob[],
   filters: DeployBuildJobFilters,
@@ -480,21 +526,17 @@ const analyzeRepository = async (repositoryUrl: string, _serverName: string, sub
       return { engine: 'docker', prerequisites: ['docker', 'docker-compose', 'git'], defaultBranch, owner, repo, fileNames };
     }
 
-    // Scan one level of subdirs for package.json (monorepo detection)
-    const dirs = (contentsRes.data as any[]).filter((item: any) => item.type === 'dir');
-    const candidates: string[] = [];
-    for (const dir of dirs.slice(0, 5)) {
-      const subContentsUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${dir.name}?ref=${defaultBranch}`;
-      try {
-        const subRes = await axios.get(subContentsUrl, { timeout: 5000 });
-        const subFiles = (subRes.data as any[]).map((f: any) => f.name);
-        if (subFiles.includes('package.json') || subFiles.includes('pyproject.toml')) {
-          candidates.push(dir.name);
-        }
-      } catch { /* skip */ }
-    }
+    const candidates = await discoverMonorepoSubdirCandidates(owner, repo, defaultBranch);
     if (candidates.length > 0) {
-      return { engine: 'unknown', prerequisites: ['git'], defaultBranch, owner, repo, fileNames, monorepoSubdirCandidates: candidates };
+      return {
+        engine: 'unknown',
+        prerequisites: ['git'],
+        defaultBranch,
+        owner,
+        repo,
+        fileNames,
+        monorepoSubdirCandidates: candidates,
+      };
     }
 
     return { engine: 'unknown', prerequisites: ['git'], defaultBranch, owner, repo, fileNames };

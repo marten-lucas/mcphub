@@ -8,7 +8,7 @@ import {
   searchMarketServers,
   filterMarketServersByCategory,
   filterMarketServersByTag,
-  registerCustomServer,
+  registerCustomServersFromRepository,
   updateCustomServer,
   deleteCustomServer,
   isSupportedRepositoryUrl,
@@ -159,7 +159,7 @@ export const getMarketServersByTag = (req: Request, res: Response): void => {
 };
 
 // Register a custom MCP server from a Git repository
-export const registerCustomMarketServer = (req: Request, res: Response): void => {
+export const registerCustomMarketServer = async (req: Request, res: Response): Promise<void> => {
   try {
     const { serverName, repositoryUrl, tags, version, subdir } = req.body;
 
@@ -191,7 +191,7 @@ export const registerCustomMarketServer = (req: Request, res: Response): void =>
       ? tags.filter((tag: unknown): tag is string => typeof tag === 'string' && tag.trim().length > 0)
       : [];
 
-    const newServer = registerCustomServer(
+    const registrationResult = await registerCustomServersFromRepository(
       serverName,
       repositoryUrl,
       parsedTags,
@@ -200,8 +200,10 @@ export const registerCustomMarketServer = (req: Request, res: Response): void =>
     );
     const response: ApiResponse = {
       success: true,
-      data: newServer,
-      message: 'Custom server registered successfully',
+      data: registrationResult,
+      message: registrationResult.autoDetectedVariants
+        ? `Registered ${registrationResult.createdServers.length} custom server variants successfully`
+        : 'Custom server registered successfully',
     };
     res.status(201).json(response);
   } catch (error) {
