@@ -56,6 +56,8 @@
 ## Build Scoping — Variants
 - [x] Build `authentik-mcp`
 - [x] Confirm its runs do not appear under `authentik-diag-mcp`
+- [x] Build `authentik-diag-mcp`
+- [x] Confirm its run is stored under `authentik-diag-mcp`
 
 ## Delete Custom Repo
 - [ ] Delete a custom repo without cascade
@@ -78,3 +80,5 @@
   - Duplicate custom repo creation returns a 409 conflict with a user-visible error message
   - Root monorepo registration now detects nested package manifests and auto-registers sibling variant entries
   - Re-running monorepo registration is conflict-safe when some sibling variants already exist
+  - `authentik-diag-mcp` now builds and can be added successfully; it is intentionally still offline until `AUTHENTIK_TOKEN` is provided
+  - Current disconnected-state cause is explicit and user-visible: missing required Authentik parameters such as `--token`
