@@ -43,18 +43,19 @@
 - [ ] Remove build works
 
 ## Monorepo / Variants
-- [x] The app accepts a repo-level custom install and resolves the package working directory correctly for `nodejs/authentik-mcp` in the live UI flow
-- [ ] Register `authentik-diag-mcp` with subdir `nodejs/authentik-diag-mcp`
-- [ ] Both entries appear independently
-- [ ] Variants section links each entry to the other
-- [ ] Subdir-specific README or root fallback loads correctly
+- [x] Registering `https://github.com/cdmx-in/authentik-mcp` at repo root auto-creates the `authentik-mcp` and `authentik-diag-mcp` custom entries
+- [x] `authentik-mcp` resolves and preserves `nodejs/authentik-mcp` through detail → build flow
+- [x] `authentik-diag-mcp` resolves and preserves `nodejs/authentik-diag-mcp` through detail → build flow
+- [x] Both entries appear independently in Market search results
+- [x] Variants section links each entry to the other
+- [x] Subdir-specific README or root fallback loads correctly
 - [x] Fix applied: selected `subdir` is now preserved across preview/build/install requests and used as the working directory for install/build steps
 - [x] Live-browser blocker resolved: the app was serving stale frontend assets earlier; the current deployment is serving the updated custom-source install UI and the workflow now completes successfully in-browser
 - [x] Validation status: code compiles cleanly with `pnpm build`, and live E2E validation against a real custom repo completed successfully
 
 ## Build Scoping — Variants
-- [ ] Build `authentik-mcp`
-- [ ] Confirm its runs do not appear under `authentik-diag-mcp`
+- [x] Build `authentik-mcp`
+- [x] Confirm its runs do not appear under `authentik-diag-mcp`
 
 ## Delete Custom Repo
 - [ ] Delete a custom repo without cascade
@@ -75,3 +76,5 @@
   - Install form command/args prefill from successful build — fixed
   - Install flow preserved `cwd` and respected custom payload/name — fixed
   - Duplicate custom repo creation returns a 409 conflict with a user-visible error message
+  - Root monorepo registration now detects nested package manifests and auto-registers sibling variant entries
+  - Re-running monorepo registration is conflict-safe when some sibling variants already exist
