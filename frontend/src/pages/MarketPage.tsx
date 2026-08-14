@@ -237,7 +237,10 @@ const MarketPage: React.FC = () => {
     }
   };
 
-  const handleBackToList = () => navigate(`/market?tab=${currentTab}`);
+  const handleBackToList = () => {
+    setAddCustomRepoModalOpen(false);
+    navigate(`/market?tab=${currentTab}`);
+  };
 
   const deriveDeployBuildDefaults = (repoUrl: string) => {
     const trimmed = repoUrl.trim();

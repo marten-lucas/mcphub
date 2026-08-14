@@ -518,14 +518,7 @@ const analyzeRepository = async (repositoryUrl: string, _serverName: string, sub
       }
     }
 
-    if (fileNames.includes('package.json')) {
-      return { engine: 'node', prerequisites: ['node', 'npm', 'git'], defaultBranch, owner, repo, fileNames };
-    } else if (fileNames.includes('pyproject.toml') || fileNames.includes('setup.py') || fileNames.includes('requirements.txt')) {
-      return { engine: 'python', prerequisites: ['python3', 'pip', 'git'], defaultBranch, owner, repo, fileNames };
-    } else if (fileNames.includes('Dockerfile') || fileNames.includes('docker-compose.yml')) {
-      return { engine: 'docker', prerequisites: ['docker', 'docker-compose', 'git'], defaultBranch, owner, repo, fileNames };
-    }
-
+    // Attempt monorepo detection first for root-level monorepos
     const candidates = await discoverMonorepoSubdirCandidates(owner, repo, defaultBranch);
     if (candidates.length > 0) {
       return {
@@ -537,6 +530,15 @@ const analyzeRepository = async (repositoryUrl: string, _serverName: string, sub
         fileNames,
         monorepoSubdirCandidates: candidates,
       };
+    }
+
+    // Single-module repos: use root-level engine detection
+    if (fileNames.includes('package.json')) {
+      return { engine: 'node', prerequisites: ['node', 'npm', 'git'], defaultBranch, owner, repo, fileNames };
+    } else if (fileNames.includes('pyproject.toml') || fileNames.includes('setup.py') || fileNames.includes('requirements.txt')) {
+      return { engine: 'python', prerequisites: ['python3', 'pip', 'git'], defaultBranch, owner, repo, fileNames };
+    } else if (fileNames.includes('Dockerfile') || fileNames.includes('docker-compose.yml')) {
+      return { engine: 'docker', prerequisites: ['docker', 'docker-compose', 'git'], defaultBranch, owner, repo, fileNames };
     }
 
     return { engine: 'unknown', prerequisites: ['git'], defaultBranch, owner, repo, fileNames };
