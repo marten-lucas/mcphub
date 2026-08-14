@@ -1,0 +1,128 @@
+{
+  "diagnostic": {
+    "name": "diagnostic",
+    "display_name": "Diagnostic",
+    "description": "Custom MCP server from https://github.com/marten-lucas/technitium-mcp-secure",
+    "repository": {
+      "type": "git-repository",
+      "url": "https://github.com/marten-lucas/technitium-mcp-secure",
+      "subdir": "packages/diagnostic"
+    },
+    "homepage": "https://github.com/marten-lucas/technitium-mcp-secure",
+    "author": {
+      "name": "marten-lucas"
+    },
+    "license": "Unknown",
+    "is_official": false,
+    "categories": [
+      "Custom"
+    ],
+    "tags": [
+      "github",
+      "marten-lucas",
+      "technitium",
+      "mcp",
+      "secure",
+      "Custom"
+    ],
+    "examples": [],
+    "installations": {},
+    "arguments": {},
+    "tools": [],
+    "version": "latest"
+  },
+  "full": {
+    "name": "full",
+    "display_name": "Full",
+    "description": "Custom MCP server from https://github.com/marten-lucas/technitium-mcp-secure",
+    "repository": {
+      "type": "git-repository",
+      "url": "https://github.com/marten-lucas/technitium-mcp-secure",
+      "subdir": "packages/full"
+    },
+    "homepage": "https://github.com/marten-lucas/technitium-mcp-secure",
+    "author": {
+      "name": "marten-lucas"
+    },
+    "license": "Unknown",
+    "is_official": false,
+    "categories": [
+      "Custom"
+    ],
+    "tags": [
+      "github",
+      "marten-lucas",
+      "technitium",
+      "mcp",
+      "secure",
+      "Custom"
+    ],
+    "examples": [],
+    "installations": {},
+    "arguments": {},
+    "tools": [],
+    "version": "latest"
+  },
+  "openwisp-diagnostic": {
+    "name": "openwisp-diagnostic",
+    "display_name": "Openwisp diagnostic",
+    "description": "Custom MCP server from https://github.com/marten-lucas/openwisp-mcp",
+    "repository": {
+      "type": "git-repository",
+      "url": "https://github.com/marten-lucas/openwisp-mcp",
+      "subdir": "packages/openwisp-diagnostic"
+    },
+    "homepage": "https://github.com/marten-lucas/openwisp-mcp",
+    "author": {
+      "name": "marten-lucas"
+    },
+    "license": "Unknown",
+    "is_official": false,
+    "categories": [
+      "Custom"
+    ],
+    "tags": [
+      "github",
+      "marten-lucas",
+      "openwisp",
+      "mcp",
+      "Custom"
+    ],
+    "examples": [],
+    "installations": {},
+    "arguments": {},
+    "tools": [],
+    "version": "latest"
+  },
+  "openwisp-full": {
+    "name": "openwisp-full",
+    "display_name": "Openwisp full",
+    "description": "Custom MCP server from https://github.com/marten-lucas/openwisp-mcp",
+    "repository": {
+      "type": "git-repository",
+      "url": "https://github.com/marten-lucas/openwisp-mcp",
+      "subdir": "packages/openwisp-full"
+    },
+    "homepage": "https://github.com/marten-lucas/openwisp-mcp",
+    "author": {
+      "name": "marten-lucas"
+    },
+    "license": "Unknown",
+    "is_official": false,
+    "categories": [
+      "Custom"
+    ],
+    "tags": [
+      "github",
+      "marten-lucas",
+      "openwisp",
+      "mcp",
+      "Custom"
+    ],
+    "examples": [],
+    "installations": {},
+    "arguments": {},
+    "tools": [],
+    "version": "latest"
+  }
+}
